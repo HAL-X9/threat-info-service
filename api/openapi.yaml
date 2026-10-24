@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: Information Exchange Service
+  description: |
+    API для обмена информацией об угрозах. Каждая угроза идентифицируется
+    MD5-хешем вредоносного файла.
+
+    Чтение открыто. Создание и обновление требуют Bearer-токена.
+  version: 1.0.0
+
+tags:
+  - name: threats
+    description: Информация об угрозах
+
+paths:
+  /info/{md5}:
+    get:
+      tags: [threats]
+      summary: Получить информацию об угрозе по MD5
+      description: Возвращает полную информацию об угрозе для указанного MD5-хеша.
+      operationId: getInfoByMd5
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Md5'
+      responses:
+        '200':
+          description: Успешный ответ с информацией об угрозе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [threats]
+      summary: Обновить информацию об угрозе по MD5
+      description: |
+        Полностью заменяет информацию о существующей угрозе. Необязательные
+        поля, не переданные в запросе, очищаются. MD5 и `created_at` не меняются.
+      operationId: updateThreat
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Md5'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreatUpdateRequest'
+      responses:
+        '200':
+          description: Информация успешно обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /info:
+    post:
+      tags: [threats]
+      summary: Создать новую запись об угрозе
+      description: Добавляет новую информацию об угрозе. MD5 должен быть уникальным.
+      operationId: createThreat
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreatCreateRequest'
+      responses:
+        '201':
+          description: Запись успешно создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Угроза с таким MD5 уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Статический API-токен в заголовке `Authorization`.
+
+  parameters:
+    Md5:
+      name: md5
+      in: path
+      required: true
+      description: MD5-хеш файла (32 символа, шестнадцатеричные цифры, регистр не важен)
+      schema:
+        $ref: '#/components/schemas/Md5'
+
+  responses:
+    BadRequest:
+      description: Некорректные данные запроса или MD5
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Токен отсутствует или недействителен
+      headers:
+        WWW-Authenticate:
+          description: Схема аутентификации
+          schema:
+            type: string
+            example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Угроза с указанным MD5 не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Превышен лимит запросов
+      headers:
+        Retry-After:
+          description: Через сколько секунд можно повторить запрос
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    Md5:
+      type: string
+      pattern: '^[a-fA-F0-9]{32}$'
+      description: MD5-хеш файла (32 шестнадцатеричных символа). Сервер хранит его в нижнем регистре.
+      example: d41d8cd98f00b204e9800998ecf8427e
+
+    ThreatName:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: Название угрозы
+      example: Trojan.Win32.Generic
+
+    Severity:
+      type: string
+      enum: [low, medium, high, critical]
+      description: Степень опасности
+      example: high
+
+    Category:
+      type: string
+      enum: [trojan, ransomware, worm, spyware, adware, other]
+      description: Категория угрозы
+      example: trojan
+
+    Description:
+      type: string
+      maxLength: 2000
+      description: Произвольное описание угрозы
+      example: Загружает и запускает дополнительные модули
+
+    Tags:
+      type: array
+      maxItems: 20
+      uniqueItems: true
+      description: Метки угрозы. Сервер приводит их к нижнему регистру.
+      items:
+        type: string
+        minLength: 1
+        maxLength: 50
+      example: [dropper, persistence]
+
+    ThreatCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [md5, name, severity, category]
+      properties:
+        md5:
+          $ref: '#/components/schemas/Md5'
+        name:
+          $ref: '#/components/schemas/ThreatName'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        category:
+          $ref: '#/components/schemas/Category'
+        description:
+          $ref: '#/components/schemas/Description'
+        tags:
+          $ref: '#/components/schemas/Tags'
+
+    ThreatUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, severity, category]
+      properties:
+        name:
+          $ref: '#/components/schemas/ThreatName'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        category:
+          $ref: '#/components/schemas/Category'
+        description:
+          $ref: '#/components/schemas/Description'
+        tags:
+          $ref: '#/components/schemas/Tags'
+
+    ThreatResponse:
+      type: object
+      required: [md5, name, severity, category, tags, created_at, updated_at]
+      properties:
+        md5:
+          $ref: '#/components/schemas/Md5'
+        name:
+          $ref: '#/components/schemas/ThreatName'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        category:
+          $ref: '#/components/schemas/Category'
+        description:
+          $ref: '#/components/schemas/Description'
+        tags:
+          $ref: '#/components/schemas/Tags'
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания записи (UTC), задаётся сервером
+          example: '2026-10-24T14:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Время последнего изменения записи (UTC), задаётся сервером
+          example: '2026-10-24T15:45:00Z'
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: Человекочитаемое описание ошибки
+          example: Threat not found
+        details:
+          type: string
+          description: Дополнительная информация
+          example: No threat with MD5 d41d8cd98f00b204e9800998ecf8427e found
