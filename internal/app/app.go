@@ -2,34 +2,25 @@ package app
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
-	"os"
-	"time"
 
 	"github.com/HAL-X9/threat-info-service/internal/config"
-	"github.com/HAL-X9/threat-info-service/internal/transport/http/health"
+	"github.com/HAL-X9/threat-info-service/internal/httpserver"
+	"github.com/HAL-X9/threat-info-service/internal/postgres"
+	"github.com/HAL-X9/threat-info-service/internal/transport/http/router"
 )
 
-// shutdownTimeout bounds how long in-flight requests may drain on shutdown.
-const shutdownTimeout = 15 * time.Second
-
 type App struct {
-	server *http.Server
-	log    *slog.Logger
+	cfg *config.Config
+	log *slog.Logger
 }
 
-// New parses the flags, loads and validates the configuration and builds the
-// dependencies. It performs no network I/O: nothing is opened until Run.
-//
-// args are the command-line arguments without the program name and getenv
-// resolves environment variables; both are supplied by the caller.
-func New(args []string, getenv func(string) string) (*App, error) {
+// New loads and validates the configuration and builds the logger, which
+// writes to stderr. It does no network I/O: nothing is opened until Run.
+func New(args []string, getenv func(string) string, stderr io.Writer) (*App, error) {
 	configPath, err := parseFlags(args)
 	if err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
@@ -42,70 +33,35 @@ func New(args []string, getenv func(string) string) (*App, error) {
 		return nil, fmt.Errorf("load config (%s): %w", path, err)
 	}
 
-	log := newLogger(os.Stderr, cfg.Log.Level)
+	log := newLogger(stderr, cfg.Log.Level)
+	log.Info("configuration loaded", "path", path, "log_level", cfg.Log.Level.String())
 
-	server := &http.Server{
-		Addr:              cfg.HTTPServer.Addr,
-		Handler:           newHandler(),
-		ReadTimeout:       cfg.HTTPServer.Timeouts.ReadTimeout,
-		ReadHeaderTimeout: cfg.HTTPServer.Timeouts.ReadHeaderTimeout,
-		WriteTimeout:      cfg.HTTPServer.Timeouts.WriteTimeout,
-		IdleTimeout:       cfg.HTTPServer.Timeouts.IdleTimeout,
-		MaxHeaderBytes:    cfg.HTTPServer.MaxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
-	}
-
-	return &App{server: server, log: log}, nil
+	return &App{cfg: cfg, log: log}, nil
 }
 
-// Run serves HTTP until ctx is canceled or the server fails, and returns only
-// after the server has stopped. In-flight requests get shutdownTimeout to
-// finish. It returns nil on a requested shutdown.
+// Run builds the dependencies and serves until ctx is canceled or the server
+// fails. It returns nil on a requested shutdown.
 func (a *App) Run(ctx context.Context) error {
-	// Bind before serving, so a taken port fails Run immediately.
-	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", a.server.Addr)
+	pool, err := postgres.NewPool(ctx, a.cfg.Database)
 	if err != nil {
-		return fmt.Errorf("listen: %w", err)
+		return fmt.Errorf("postgres: %w", err)
 	}
+	a.log.Info("database connected",
+		"min_conns", a.cfg.Database.Pool.MinConns,
+		"max_conns", a.cfg.Database.Pool.MaxConns,
+	)
+	// Closed only after the server has stopped.
+	defer func() {
+		pool.Close()
+		a.log.Info("database closed")
+	}()
 
-	served := make(chan error, 1)
-	go func() { served <- a.server.Serve(ln) }()
+	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool), a.log)
 
-	a.log.Info("service started", "addr", ln.Addr().String())
-
-	select {
-	case err = <-served:
-		return fmt.Errorf("serve: %w", err)
-	case <-ctx.Done():
-	}
-
-	a.log.Info("shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
-	defer cancel()
-
-	if err = a.server.Shutdown(shutdownCtx); err != nil {
-		return errors.Join(fmt.Errorf("shutdown: %w", err), a.server.Close())
-	}
-
-	// Shutdown makes Serve return http.ErrServerClosed at once.
-	<-served
-
-	a.log.Info("service stopped")
-
-	return nil
+	return server.Run(ctx)
 }
 
-// newHandler registers the routes of the HTTP API.
-func newHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", health.Liveness)
-
-	return mux
-}
-
-// parseFlags parses args into a private FlagSet instead of the global
-// flag.CommandLine, so New can be called more than once in a process.
+// parseFlags uses a private FlagSet, so New can be called more than once.
 func parseFlags(args []string) (configPath string, err error) {
 	fs := flag.NewFlagSet("threat-info-service", flag.ContinueOnError)
 	fs.StringVar(&configPath, "config", "", "path to the YAML config (overrides "+config.EnvConfigPath+")")

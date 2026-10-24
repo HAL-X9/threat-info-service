@@ -17,52 +17,24 @@ The goal is not an "enterprise" structure: each boundary exists because it remov
 ```mermaid
 %%{init: {'theme':'base'}}%%
 flowchart TB
-    subgraph ENTRY["Entry point"]
-        CMD["cmd"]
-        APP["app"]
-        CFG["config"]
-    end
+    CLIENT["Client"]
+    HTTP["HTTP transport"]
+    SVC["Service"]
+    DOM["Domain"]
+    STORE["Storage interface"]
+    PG["postgres"]
+    MEM["memory"]
 
-    subgraph TRANSPORT["Transport"]
-        HTTP["transport/http/threat"]
-        GEN["transport/http/gen"]
-        MW["transport/http/middleware"]
-        HEALTH["transport/http/health"]
-    end
-
-    subgraph CORE["Core"]
-        SVC["service"]
-        DOM["domain"]
-    end
-
-    subgraph STORAGE["Storage"]
-        PG["postgres"]
-        MEM["memory"]
-    end
-
-    CMD --> APP
-    APP --> CFG
-    APP --> HTTP
-    APP --> HEALTH
-    APP --> PG
-    PG --> CFG
-    HTTP --> GEN
-    HTTP --> MW
-    HTTP --> SVC
+    CLIENT --> HTTP --> SVC
     SVC --> DOM
-    PG -. implements .-> SVC
-    MEM -. implements .-> SVC
-    PG --> DOM
-    MEM --> DOM
+    SVC --> STORE
+    PG -. implements .-> STORE
+    MEM -. implements .-> STORE
 
     classDef default fill:#e5f3ff,stroke:none,color:#22559b;
-    style ENTRY fill:#ffffff,stroke:none
-    style TRANSPORT fill:#ffffff,stroke:none
-    style CORE fill:#ffffff,stroke:none
-    style STORAGE fill:#ffffff,stroke:none
 ```
 
-Solid arrows are imports. Dashed arrows mark interface implementation: `service` declares the repository interface, and `postgres` and `memory` satisfy it without importing `service`.
+Solid arrows follow the direction of calls and dependencies. Dashed arrows mark interface implementation: `service` declares the storage interface, and `postgres` and `memory` satisfy it without importing `service`.
 
 ## Request lifecycle
 
@@ -79,33 +51,24 @@ The sequence below traces `POST /info`, the request that exercises every layer.
 %%{init: {'theme':'base', 'themeVariables': {'actorBkg':'#e5f3ff','actorBorder':'#e0e1e2','actorTextColor':'#1a1a1a','actorLineColor':'#e0e1e2','signalColor':'#5a5a5a','signalTextColor':'#1a1a1a','noteBkgColor':'#e5f3ff','noteBorderColor':'#e0e1e2','noteTextColor':'#1a1a1a','sequenceNumberColor':'#1a1a1a'}}}%%
 sequenceDiagram
     participant C as Client
-    participant M as Middleware chain
-    participant H as Handler
-    participant S as service
-    participant R as Repository
-    participant D as PostgreSQL
+    participant H as HTTP transport
+    participant S as Service
+    participant D as Storage
 
-    C->>M: POST /info
-    M->>M: recover, request ID, logging
-    M->>M: rate limit, authentication
-    M->>M: validate against OpenAPI schema
-    M->>H: generated router dispatch
-
-    H->>S: Create(threat)
-    S->>S: normalize, validate invariants, set timestamps
-    S->>R: Create(threat)
-    R->>D: INSERT
+    C->>H: POST /info
+    H->>H: middleware, schema validation
+    H->>S: Create
+    S->>S: normalize, apply rules
+    S->>D: insert
 
     alt MD5 is new
-        D-->>R: row
-        R-->>S: threat
+        D-->>S: stored
         S-->>H: threat
-        H-->>C: 201 ThreatResponse
+        H-->>C: 201 Created
     else MD5 already exists
-        D-->>R: SQLSTATE 23505
-        R-->>S: ErrConflict
+        D-->>S: conflict
         S-->>H: ErrConflict
-        H-->>C: 409 ErrorResponse
+        H-->>C: 409 Conflict
     end
 ```
 
@@ -136,7 +99,7 @@ sequenceDiagram
 `cmd/main.go` installs a signal context (`SIGINT`, `SIGTERM`) and calls `app.New` followed by `App.Run`.
 
 1. **Construction (`app.New`).** Flags are parsed into a private `FlagSet`. The configuration path is resolved with the precedence flag > environment > default, the YAML file is decoded strictly, secrets are read from the environment, and the result is validated. No network I/O happens at this stage.
-2. **Serving (`App.Run`).** Resources with a lifetime are opened and the HTTP server is started. `Run` blocks until the signal context is canceled or a component fails.
+2. **Serving (`App.Run`).** The database pool is opened and pinged, so an unreachable database or a wrong DSN fails startup with an error. The router is assembled and handed to `httpserver`, which binds the listener and serves. `Run` blocks until the signal context is canceled or the server fails.
 3. **Shutdown.** The server stops accepting connections and drains in-flight requests within a bounded timeout. The database pool is closed only after the server has stopped, so nothing uses it while it is closed. A clean, signal-driven shutdown returns `nil`.
 
 ## Configuration
@@ -154,93 +117,19 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | Package | Responsibility |
 |---|---|
 | `cmd` | Process entry point: signal context, exit code |
-| `internal/app` | Composition root: configuration loading, dependency construction, route registration, HTTP server construction, graceful shutdown |
+| `internal/app` | Composition root: configuration loading, dependency construction and their lifetime |
 | `internal/config` | Strict YAML decoding, environment secrets, path resolution, validation |
 | `internal/domain` | `Threat`, enumerations, invariants, `ErrNotFound`, `ErrConflict`, `ErrValidation` |
 | `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the `Clock` interface |
 | `internal/postgres` | Connection pool, repository, embedded migrations |
 | `internal/memory` | In-memory repository for unit and handler tests |
+| `internal/httpserver` | HTTP server built from the configuration, listener binding, graceful shutdown |
+| `internal/transport/http/router` | Route registration: the single place that maps paths to handlers |
 | `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
-| `internal/transport/http/health` | Operational endpoints: `/healthz`, later `/readyz` |
+| `internal/transport/http/health` | Operational endpoints: `/healthz` (liveness) and `/readyz` (readiness, pings the database) |
 | `internal/transport/http/gen` | Generated code. Never edited by hand |
 | `internal/transport/http/middleware` | Recovery, request ID, logging, rate limiting, authentication |
 | `api` | The OpenAPI specification |
-
-## Dependency rules
-
-| Layer | May import | Must not import |
-|---|---|---|
-| `domain` | standard library | every other internal package |
-| `service` | `domain` | `postgres`, `memory`, `transport`, `config`, `app` |
-| `postgres` | `domain`, `config`, `pgx` | `service`, `transport`, `app` |
-| `memory` | `domain` | `service`, `transport`, `config`, `app` |
-| `transport/http/threat` | `service`, `domain`, `gen` | `postgres`, `memory`, `middleware`, `app` |
-| `transport/http/health`, `transport/http/middleware` | standard library | `service`, `postgres`, `memory`, `app` |
-| `config` | standard library, `gopkg.in/yaml.v3` | every other internal package |
-| `app` | everything (composition root) | — |
-
-Nothing under `internal/` may import `internal/app`; only `cmd` and tests do. These rules are currently a convention. Enforcing them with the `depguard` linter, as a CI check next to the formatter, is planned once the packages exist.
-
-## Testing strategy
-
-| Level | Scope | Approach |
-|---|---|---|
-| Unit | `domain`, `service`, `config` | Table-driven tests against the in-memory repository, run with `-race` |
-| Fuzz | MD5 validation and normalization | `go test -fuzz` |
-| Handler | Status codes, error format, strict JSON | `httptest` over the in-memory repository |
-| Integration | The whole chain and the SQL | A real PostgreSQL in a container: uniqueness, concurrent `POST`, migrations |
-| Contract | Responses conform to `openapi.yaml` | Response validation against the specification |
-
-## Implementation status
-
-| Area | Status |
-|---|---|
-| OpenAPI specification | Done |
-| Configuration: YAML, environment secrets, validation, tests | Done |
-| Application skeleton: construction, signal handling, graceful stop | Done |
-| Code generation from the specification | Planned |
-| `domain`, `service`, `memory` | Planned |
-| HTTP handlers and error mapping | Planned |
-| PostgreSQL pool, repository, migrations | Planned |
-| Middleware: recovery, request ID, logging, rate limiting, authentication | Planned |
-| Health endpoints | Planned |
-| Dockerfile, Compose file, continuous-integration test job | Planned |
-| Optional TLS | Planned |
-
-The diagram places the planned work against what exists today.
-
-```mermaid
-%%{init: {'theme':'base'}}%%
-flowchart TB
-    subgraph DONE["Implemented"]
-        A["OpenAPI specification"]
-        B["Configuration"]
-        C["Application skeleton"]
-        D["Linter in CI"]
-    end
-
-    subgraph PLANNED["Planned"]
-        E["Code generation"]
-        F["Domain, service, memory repository"]
-        G["HTTP handlers, error mapping"]
-        H["PostgreSQL, migrations"]
-        I["Middleware chain"]
-        J["Docker, test job in CI"]
-    end
-
-    A --> E --> G
-    B --> C
-    C -.-> G
-    F --> G
-    F --> H
-    G --> I
-    H --> J
-    I --> J
-
-    classDef default fill:#e5f3ff,stroke:none,color:#22559b;
-    style DONE fill:#ffffff,stroke:none
-    style PLANNED fill:#ffffff,stroke:none
-```
 
 ## Non-goals
 

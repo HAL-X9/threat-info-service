@@ -8,7 +8,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering, the request lifecycle a
 
 ## Status
 
-The project is under active development. The OpenAPI specification, the configuration subsystem, the PostgreSQL connection pool, and the HTTP server with graceful shutdown are in place. The only endpoint served so far is `GET /healthz`; the threat endpoints defined in the specification are not implemented yet. The implementation status of each area is tracked in [ARCHITECTURE.md](ARCHITECTURE.md#implementation-status).
+The project is under active development. The OpenAPI specification, the configuration subsystem, the PostgreSQL connection pool, and the HTTP server with graceful shutdown are in place. The only endpoints served so far are `GET /healthz` (the process is alive) and `GET /readyz` (the database answers a ping); the threat endpoints defined in the specification are not implemented yet.
 
 ## Quick start
 
@@ -24,23 +24,6 @@ make up
 
 The command builds the service image and starts two containers: the service on port `8080` and PostgreSQL 18 on port `5432`. The service starts only after the database reports itself healthy.
 
-Verify that the service is running:
-
-```bash
-curl -i http://localhost:8080/healthz
-```
-
-A running service answers `HTTP/1.1 200 OK`.
-
-To follow the logs and to stop the stack:
-
-```bash
-docker compose logs -f threat-info-service
-make down
-```
-
-`make down` keeps the database volume. To remove the stored data as well, run `docker compose down -v`.
-
 ### Run from source
 
 Requirements: Go 1.27 and a reachable PostgreSQL instance. The Compose database can serve this purpose:
@@ -55,3 +38,14 @@ make run
 ```bash
 THREAT_INFO_DATABASE_DSN='postgres://user:password@host:5432/dbname?sslmode=disable' make run
 ```
+
+## Verify
+
+Once the service is running, check that it is alive and that it can reach the database:
+
+```bash
+curl -i http://localhost:8080/healthz
+curl -i http://localhost:8080/readyz
+```
+
+`/healthz` answers `200 OK` while the process is alive. `/readyz` answers `200 OK` when the database responds and `503 Service Unavailable` otherwise.

@@ -21,7 +21,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	a, err := app.New(os.Args[1:], os.Getenv)
+	a, err := app.New(os.Args[1:], os.Getenv, os.Stderr)
 	if err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
