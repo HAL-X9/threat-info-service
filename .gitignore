@@ -46,6 +46,9 @@ go.work.sum
 # env file
 .env
 
+# Build output
+bin/
+
 ### macOS template
 # General
 .DS_Store

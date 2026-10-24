@@ -16,6 +16,10 @@ run:
 test:
 	go test -race ./...
 
+.PHONY: test-integration
+test-integration:
+	go test -race -tags integration ./tests/integration/...
+
 .PHONY: lint
 lint:
 	golangci-lint run ./...
