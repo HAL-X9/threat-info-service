@@ -1,2 +1,44 @@
 services:
-  
+  threat-info-service:
+    build: .
+    image: threat-info-service:latest
+    container_name: threat-info-service
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "8080:8080"
+    environment:
+      THREAT_INFO_DATABASE_DSN: postgres://threats:threats@postgres:5432/threats?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: on-failure
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: threat-info-postgres
+    environment:
+      POSTGRES_USER: threats
+      POSTGRES_PASSWORD: threats
+      POSTGRES_DB: threats
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threats -d threats"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
