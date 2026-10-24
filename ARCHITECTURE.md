@@ -24,9 +24,10 @@ flowchart TB
     end
 
     subgraph TRANSPORT["Transport"]
-        HTTP["transport/http"]
+        HTTP["transport/http/threat"]
         GEN["transport/http/gen"]
         MW["transport/http/middleware"]
+        HEALTH["transport/http/health"]
     end
 
     subgraph CORE["Core"]
@@ -42,6 +43,7 @@ flowchart TB
     CMD --> APP
     APP --> CFG
     APP --> HTTP
+    APP --> HEALTH
     APP --> PG
     PG --> CFG
     HTTP --> GEN
@@ -71,7 +73,7 @@ The sequence below traces `POST /info`, the request that exercises every layer.
 3. The generated router calls the handler, which converts the request into a domain value and calls the service.
 4. The service normalizes the input (the MD5 and the tags are lowercased, strings are trimmed), enforces the business invariants, sets `created_at` and `updated_at` from its clock, and calls the repository.
 5. The repository inserts the row. It never reads before it writes: uniqueness is enforced by the primary key, and a violation (SQLSTATE `23505`) is returned as `domain.ErrConflict`.
-6. The handler maps the result. A single function in `transport/http/errors.go` translates every domain error into a status code and an `ErrorResponse`, so handlers know nothing about PostgreSQL error codes and the storage layer knows nothing about HTTP.
+6. The handler maps the result. A single function in `transport/http/threat/errors.go` translates every domain error into a status code and an `ErrorResponse`, so handlers know nothing about PostgreSQL error codes and the storage layer knows nothing about HTTP.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {'actorBkg':'#e5f3ff','actorBorder':'#e0e1e2','actorTextColor':'#1a1a1a','actorLineColor':'#e0e1e2','signalColor':'#5a5a5a','signalTextColor':'#1a1a1a','noteBkgColor':'#e5f3ff','noteBorderColor':'#e0e1e2','noteTextColor':'#1a1a1a','sequenceNumberColor':'#1a1a1a'}}}%%
@@ -152,13 +154,14 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | Package | Responsibility |
 |---|---|
 | `cmd` | Process entry point: signal context, exit code |
-| `internal/app` | Composition root: configuration loading, dependency construction, lifecycle, graceful shutdown |
+| `internal/app` | Composition root: configuration loading, dependency construction, route registration, HTTP server construction, graceful shutdown |
 | `internal/config` | Strict YAML decoding, environment secrets, path resolution, validation |
 | `internal/domain` | `Threat`, enumerations, invariants, `ErrNotFound`, `ErrConflict`, `ErrValidation` |
 | `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the `Clock` interface |
 | `internal/postgres` | Connection pool, repository, embedded migrations |
 | `internal/memory` | In-memory repository for unit and handler tests |
-| `internal/transport/http` | Handlers implementing the generated server interface, error mapping, server construction |
+| `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
+| `internal/transport/http/health` | Operational endpoints: `/healthz`, later `/readyz` |
 | `internal/transport/http/gen` | Generated code. Never edited by hand |
 | `internal/transport/http/middleware` | Recovery, request ID, logging, rate limiting, authentication |
 | `api` | The OpenAPI specification |
@@ -171,7 +174,8 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `service` | `domain` | `postgres`, `memory`, `transport`, `config`, `app` |
 | `postgres` | `domain`, `config`, `pgx` | `service`, `transport`, `app` |
 | `memory` | `domain` | `service`, `transport`, `config`, `app` |
-| `transport/http` | `service`, `domain`, `gen`, `middleware` | `postgres`, `memory`, `app` |
+| `transport/http/threat` | `service`, `domain`, `gen` | `postgres`, `memory`, `middleware`, `app` |
+| `transport/http/health`, `transport/http/middleware` | standard library | `service`, `postgres`, `memory`, `app` |
 | `config` | standard library, `gopkg.in/yaml.v3` | every other internal package |
 | `app` | everything (composition root) | — |
 

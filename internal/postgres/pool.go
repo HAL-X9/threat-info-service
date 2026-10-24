@@ -1,5 +1,3 @@
-// Package postgres is the PostgreSQL storage: the connection pool and the
-// repositories built on top of it.
 package postgres
 
 import (
