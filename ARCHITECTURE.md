@@ -43,6 +43,7 @@ flowchart TB
     APP --> CFG
     APP --> HTTP
     APP --> PG
+    PG --> CFG
     HTTP --> GEN
     HTTP --> MW
     HTTP --> SVC
@@ -124,7 +125,7 @@ sequenceDiagram
 
 **Configuration is split by sensitivity.** Non-secret values (listener address, timeouts, pool sizing, log level) are read from a strict YAML file; unknown keys are rejected. Secrets (the database DSN, access tokens) are read only from environment variables, and a `dsn` key in YAML is an error, so a credential cannot be committed by accident. The merged result is validated once, at startup, and the process refuses to start on any error. See [Configuration](#configuration).
 
-**The connection pool is a resource of the composition root.** `app` opens the pool, hands it to the repository, and closes it after the HTTP server has drained. The `postgres` package defines its own `Config` and does not import `config`, so it can be tested on its own. Ping failures surface at startup rather than on the first request.
+**The connection pool is a resource of the composition root.** `app` opens the pool, hands it to the repository, and closes it after the HTTP server has drained. The pool settings come straight from `config.Database`, and the connect timeout bounds both dialing and the startup ping. Ping failures surface at startup rather than on the first request.
 
 **Operational endpoints bypass the API chain.** `/healthz` (the process is alive) and `/readyz` (the database answers a ping) are registered ahead of the API middleware, so they are never rate-limited, authenticated, or validated against the schema.
 
@@ -168,7 +169,8 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 |---|---|---|
 | `domain` | standard library | every other internal package |
 | `service` | `domain` | `postgres`, `memory`, `transport`, `config`, `app` |
-| `postgres`, `memory` | `domain`, their own third-party drivers | `service`, `transport`, `config`, `app` |
+| `postgres` | `domain`, `config`, `pgx` | `service`, `transport`, `app` |
+| `memory` | `domain` | `service`, `transport`, `config`, `app` |
 | `transport/http` | `service`, `domain`, `gen`, `middleware` | `postgres`, `memory`, `app` |
 | `config` | standard library, `gopkg.in/yaml.v3` | every other internal package |
 | `app` | everything (composition root) | — |
