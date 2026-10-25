@@ -1,4 +1,3 @@
-// Package middleware holds the HTTP middleware of the service.
 package middleware
 
 import (
