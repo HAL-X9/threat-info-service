@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/HAL-X9/threat-info-service/internal/config"
 	"github.com/HAL-X9/threat-info-service/internal/httpserver"
+	"github.com/HAL-X9/threat-info-service/internal/memory"
 	"github.com/HAL-X9/threat-info-service/internal/postgres"
+	"github.com/HAL-X9/threat-info-service/internal/service"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/router"
 )
 
@@ -56,7 +59,9 @@ func (a *App) Run(ctx context.Context) error {
 		a.log.Info("database closed")
 	}()
 
-	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool), a.log)
+	threats := service.New(memory.New(), time.Now)
+
+	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool, threats), a.log)
 
 	return server.Run(ctx)
 }
