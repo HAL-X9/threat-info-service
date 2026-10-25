@@ -20,8 +20,9 @@ help:
 
 .PHONY: up
 up: db migrate-up ## Start everything: database, migrations, service
-	docker compose up -d --build
+	docker compose up -d --build --wait
 	@echo "Service is ready: http://localhost:8080"
+	@echo "API documentation: http://localhost:8082"
 
 .PHONY: down
 down: ## Stop the stack
