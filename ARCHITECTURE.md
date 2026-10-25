@@ -12,6 +12,8 @@ The service is organized as a stack of layers with a single rule: **dependencies
 - **Adapters** — the PostgreSQL repository and the HTTP transport. They depend on the service and the domain, never the other way around.
 - **Composition root** — `internal/app` is the only package that knows every other one. It builds the dependencies, owns their lifetime, and wires them together.
 
+The HTTP API is described in [docs/api.md](docs/api.md) and the database in [docs/database.md](docs/database.md).
+
 The goal is not an "enterprise" structure: each boundary exists because it removes a concrete dependency, and a layer that does not pay for itself is not introduced (see "Non-goals").
 
 ```mermaid
@@ -38,7 +40,7 @@ Solid arrows follow the direction of calls and dependencies. Dashed arrows mark 
 
 The sequence below traces `POST /info`, the request that exercises every layer.
 
-1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: request ID, logging, rate limiting, the body size limit, the `Content-Type` check, and the OpenAPI validator. The chain is built in one place, `router.New`, with `middleware.Chain`, and wraps only the API routes: the probes stay outside. The validator authenticates the operations that declare a security requirement in the specification (`POST` and `PUT`) with a bearer token, before it validates the body. Panic recovery is planned.
+1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: request ID, logging, rate limiting, the body size limit, the `Content-Type` check, and the OpenAPI validator. The chain is built in one place, `router.New`, with `middleware.Chain`, and wraps only the API routes: the probes stay outside. The validator authenticates the operations that declare a security requirement in the specification (`POST` and `PUT`) with a bearer token, before it validates the body.
 2. Validation checks what the schema can express: required fields, the MD5 pattern, enumerations, length limits, and unknown fields (`additionalProperties: false`). A request that fails is answered `400` in the `ErrorResponse` format, with a one-line reason; a missing or wrong token is answered `401`.
 3. The generated router calls the handler, which converts the request into a domain value and calls the service.
 4. The service normalizes the input (the MD5 and the tags are lowercased, strings are trimmed), enforces the business invariants, sets `created_at` and `updated_at` from its clock, and calls the repository.
@@ -84,9 +86,9 @@ sequenceDiagram
 
 **Time is set by the server.** `created_at` and `updated_at` never come from the client. The service obtains them from an injected clock function, so tests are deterministic and the timestamps do not depend on the database clock.
 
-**The repository interface belongs to its consumer.** `service` declares the small interface it needs (`Create`, `GetByMD5`, `Update`). `repository` implements it structurally, and `app` wires the two together. There is no generic repository.
+**The repository interface belongs to its consumer.** `service` declares the small interface it needs (`Create`, `Get`, `Update`). `repository` implements it structurally, and `app` wires the two together. There is no generic repository.
 
-**Configuration is split by sensitivity.** Non-secret values (listener address, timeouts, pool sizing, log level) are read from a strict YAML file; unknown keys are rejected. Secrets (the database DSN, access tokens) are read only from environment variables, and a `dsn` key in YAML is an error, so a credential cannot be committed by accident. The merged result is validated once, at startup, and the process refuses to start on any error. See [Configuration](#configuration).
+**Configuration is split by sensitivity.** Non-secret values (listener address, timeouts, pool sizing, log level) are read from a strict YAML file; unknown keys are rejected. Secrets (the database DSN and the API token) are read only from environment variables, and a `dsn` key in YAML is an error, so a credential cannot be committed by accident. The merged result is validated once, at startup, and the process refuses to start on any error. See [Configuration](#configuration).
 
 **The connection pool is a resource of the composition root.** `app` opens the pool, hands it to the repository, and closes it after the HTTP server has drained. The pool settings come straight from `config.Database`, and the connect timeout bounds both dialing and the startup ping. Ping failures surface at startup rather than on the first request.
 
@@ -129,8 +131,10 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
 | `internal/transport/http/health` | Operational endpoints: `/healthz` (liveness) and `/readyz` (readiness, pings the database) |
 | `internal/transport/http/gen` | Generated code. Never edited by hand |
-| `internal/transport/http/middleware` | Recovery, request ID, logging, rate limiting, authentication |
+| `internal/transport/http/middleware` | Request ID, logging, rate limiting, body size limit, `Content-Type` check, OpenAPI validation and bearer authentication |
 | `api` | The OpenAPI specification |
+| `tests/integration` | Integration tests: the application on a PostgreSQL container, one test per endpoint |
+| `tests/e2e` | End-to-end tests: one test per flow, against a running stack |
 
 ## Non-goals
 

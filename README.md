@@ -4,12 +4,6 @@ A REST service in Go for storing and exchanging threat intelligence, with each t
 
 The API is spec-first: the OpenAPI document is the single source of truth for the contract. Server stubs are generated from it, and requests are validated against the same schema they are documented with, so the specification and the implementation cannot drift apart.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering, the request lifecycle and the reasoning behind the design decisions, [api/openapi.yaml](api/openapi.yaml) for the API contract, and [docs/database.md](docs/database.md) for the database schema and migrations.
-
-## Status
-
-The project is under active development. The OpenAPI specification, the configuration subsystem, the PostgreSQL connection pool, and the HTTP server with graceful shutdown are in place. The only endpoints served so far are `GET /healthz` (the process is alive) and `GET /readyz` (the database answers a ping); the threat endpoints defined in the specification are not implemented yet.
-
 ## Quick start
 
 ### Run with Docker
@@ -22,7 +16,7 @@ cd threat-info-service
 make up
 ```
 
-The command creates `.env` from [`.env.example`](.env.example) on the first run, starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. The example file holds ready-to-use test values for the local database and for the API token, so nothing has to be configured. The API documentation is served by Swagger UI at http://localhost:8082. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
+The command creates `.env` from [`.env.example`](.env.example) on the first run, starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. The example file holds ready-to-use test values for the local database and for the API token, so nothing has to be configured. Swagger UI serves the API documentation at http://localhost:8082. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
 
 ### Run from source
 
@@ -40,18 +34,15 @@ make migrate-up
 go run ./cmd
 ```
 
-## Verify
+## API
 
-Once the service is running, check that it is alive and that it can reach the database:
+| Method | Path | Purpose | Token |
+|---|---|---|---|
+| `POST` | `/info` | Create a threat | Required |
+| `GET` | `/info/{md5}` | Read a threat | Not required |
+| `PUT` | `/info/{md5}` | Replace the details of a threat | Required |
 
-```bash
-curl -i http://localhost:8080/healthz
-curl -i http://localhost:8080/readyz
-```
-
-`/healthz` answers `200 OK` while the process is alive. `/readyz` answers `200 OK` when the database responds and `503 Service Unavailable` otherwise.
-
-Reads are open. `POST` and `PUT` require a bearer token from `THREAT_INFO_API_TOKEN` (`local-dev-token-1234` in the example file):
+`POST` and `PUT` require the header `Authorization: Bearer <token>`; the token is `THREAT_INFO_API_TOKEN` (`local-dev-token-1234` in the example file).
 
 ```bash
 curl -i -X POST http://localhost:8080/info \
@@ -61,3 +52,21 @@ curl -i -X POST http://localhost:8080/info \
 
 curl -i http://localhost:8080/info/d41d8cd98f00b204e9800998ecf8427e
 ```
+
+`GET /healthz` reports that the process is alive, and `GET /readyz` that the database responds. The full description, with the model, the errors and the limits, is in [docs/api.md](docs/api.md).
+
+## Tests
+
+| Command | Scope |
+|---|---|
+| `make test` | Unit tests with the race detector |
+| `make test-integration` | The application on a PostgreSQL container, one test per endpoint (needs Docker) |
+| `make test-e2e` | End-to-end flows against the running stack (run `make up` first) |
+
+## Documentation
+
+- [docs/api.md](docs/api.md): the HTTP API, with the model, the errors, the limits and examples
+- [api/openapi.yaml](api/openapi.yaml): the API contract
+- [ARCHITECTURE.md](ARCHITECTURE.md): the layering, the request lifecycle and the design decisions
+- [docs/database.md](docs/database.md): the database schema and its constraints
+- [docs/migrations.md](docs/migrations.md): the migration workflow
