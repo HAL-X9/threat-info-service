@@ -12,6 +12,10 @@ build:
 run:
 	go run ./cmd
 
+.PHONY: generate
+generate:
+	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+
 .PHONY: test
 test:
 	go test -race ./...
