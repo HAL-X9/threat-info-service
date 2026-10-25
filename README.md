@@ -4,7 +4,7 @@ A REST service in Go for storing and exchanging threat intelligence, with each t
 
 The API is spec-first: the OpenAPI document is the single source of truth for the contract. Server stubs are generated from it, and requests are validated against the same schema they are documented with, so the specification and the implementation cannot drift apart.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering, the request lifecycle and the reasoning behind the design decisions, and [api/openapi.yaml](api/openapi.yaml) for the API contract.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering, the request lifecycle and the reasoning behind the design decisions, [api/openapi.yaml](api/openapi.yaml) for the API contract, and [docs/database.md](docs/database.md) for the database schema and migrations.
 
 ## Status
 
@@ -22,21 +22,22 @@ cd threat-info-service
 make up
 ```
 
-The command builds the service image and starts two containers: the service on port `8080` and PostgreSQL 18 on port `5432`. The service starts only after the database reports itself healthy.
+The command starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
 
 ### Run from source
 
-Requirements: Go 1.27 and a reachable PostgreSQL instance. The Compose database can serve this purpose:
+Requirements: Go 1.27 and Docker for the database.
 
 ```bash
-docker compose up -d postgres
 make run
 ```
 
-`make run` connects to the database published by Compose on `localhost:5432`. To use another database, set the DSN explicitly:
+`make run` starts the Compose database if needed, applies the migrations and runs the service against `localhost:5432`. To use another database, set the DSN explicitly. The migration commands honour it too:
 
 ```bash
-THREAT_INFO_DATABASE_DSN='postgres://user:password@host:5432/dbname?sslmode=disable' make run
+export THREAT_INFO_DATABASE_DSN='postgres://user:password@host:5432/dbname?sslmode=disable'
+make migrate-up
+go run ./cmd
 ```
 
 ## Verify

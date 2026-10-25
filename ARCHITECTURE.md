@@ -121,7 +121,8 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `internal/config` | Strict YAML decoding, environment secrets, path resolution, validation |
 | `internal/domain` | `Threat`, enumerations, invariants, `ErrNotFound`, `ErrConflict`, `ErrValidation` |
 | `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the injected clock |
-| `internal/postgres` | Connection pool, repository, embedded migrations |
+| `internal/postgres` | Connection pool and repository |
+| `migrations` | SQL migrations, applied with goose (see [docs/migrations.md](docs/migrations.md)) |
 | `internal/memory` | In-memory repository for unit and handler tests |
 | `internal/httpserver` | HTTP server built from the configuration, listener binding, graceful shutdown |
 | `internal/transport/http/router` | Route registration: the single place that maps paths to handlers |
