@@ -30,6 +30,7 @@ func New(log *slog.Logger, db health.Pinger, threats threat.Service, opts Option
 	handler := middleware.Chain(
 		middleware.RequestID,
 		middleware.Logging(log),
+		middleware.Recover(log),
 		middleware.RateLimit(opts.RequestsPerSecond, opts.Burst),
 		middleware.MaxBody(opts.MaxBodyBytes),
 		middleware.RequireJSON,

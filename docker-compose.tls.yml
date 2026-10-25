@@ -1,0 +1,9 @@
+services:
+  threat-info-service:
+    environment:
+      THREAT_INFO_TLS_CERT_FILE: /app/certs/cert.pem
+      THREAT_INFO_TLS_KEY_FILE: /app/certs/key.pem
+    volumes:
+      - ./certs:/app/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "--no-check-certificate", "https://127.0.0.1:8080/readyz"]

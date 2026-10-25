@@ -258,3 +258,28 @@ func TestLoadLeavesTLSOffByDefault(t *testing.T) {
 		t.Errorf("TLS = %+v, want it off when the section is absent", cfg.HTTPServer.TLS)
 	}
 }
+
+func TestLoadTLSFilesFromTheEnvironmentOverrideTheYAML(t *testing.T) {
+	vars := secrets()
+	vars[EnvTLSCertFile] = "/certs/cert.pem"
+	vars[EnvTLSKeyFile] = "/certs/key.pem"
+
+	cfg, err := Load(writeConfig(t, validYAML), env(vars))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	want := TLS{CertFile: "/certs/cert.pem", KeyFile: "/certs/key.pem"}
+	if cfg.HTTPServer.TLS != want {
+		t.Errorf("TLS = %+v, want %+v", cfg.HTTPServer.TLS, want)
+	}
+}
+
+func TestLoadRejectsOneTLSFileFromTheEnvironment(t *testing.T) {
+	vars := secrets()
+	vars[EnvTLSCertFile] = "/certs/cert.pem"
+
+	if _, err := Load(writeConfig(t, validYAML), env(vars)); err == nil {
+		t.Fatal("Load succeeded with a certificate and no key, want an error")
+	}
+}

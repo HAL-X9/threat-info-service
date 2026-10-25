@@ -15,6 +15,14 @@ func Load(path string, getenv func(string) string) (*Config, error) {
 	cfg.Database.DSN = getenv(EnvDatabaseDSN)
 	cfg.APIToken = getenv(EnvAPIToken)
 
+	if v := getenv(EnvTLSCertFile); v != "" {
+		cfg.HTTPServer.TLS.CertFile = v
+	}
+
+	if v := getenv(EnvTLSKeyFile); v != "" {
+		cfg.HTTPServer.TLS.KeyFile = v
+	}
+
 	if err = Validate(cfg); err != nil {
 		return nil, fmt.Errorf("failed to validate app configuration: %w", err)
 	}

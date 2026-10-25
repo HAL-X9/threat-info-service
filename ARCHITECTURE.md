@@ -40,7 +40,7 @@ Solid arrows follow the direction of calls and dependencies. Dashed arrows mark 
 
 The sequence below traces `POST /info`, the request that exercises every layer.
 
-1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: request ID, logging, rate limiting, the body size limit, the `Content-Type` check, and the OpenAPI validator. The chain is built in one place, `router.New`, with `middleware.Chain`, and wraps only the API routes: the probes stay outside. The validator authenticates the operations that declare a security requirement in the specification (`POST` and `PUT`) with a bearer token, before it validates the body.
+1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: request ID, logging, panic recovery, rate limiting, the body size limit, the `Content-Type` check, and the OpenAPI validator. The chain is built in one place, `router.New`, with `middleware.Chain`, and wraps only the API routes: the probes stay outside. The validator authenticates the operations that declare a security requirement in the specification (`POST` and `PUT`) with a bearer token, before it validates the body.
 2. Validation checks what the schema can express: required fields, the MD5 pattern, enumerations, length limits, and unknown fields (`additionalProperties: false`). A request that fails is answered `400` in the `ErrorResponse` format, with a one-line reason; a missing or wrong token is answered `401`.
 3. The generated router calls the handler, which converts the request into a domain value and calls the service.
 4. The service normalizes the input (the MD5 and the tags are lowercased, strings are trimmed), enforces the business invariants, sets `created_at` and `updated_at` from its clock, and calls the repository.
@@ -110,6 +110,7 @@ sequenceDiagram
 | `THREAT_INFO_DATABASE_DSN` | database DSN | Required; rejected if present in YAML |
 | `THREAT_INFO_API_TOKEN` | bearer token that authorizes `POST` and `PUT` | Required |
 | `.env` | database credentials and the API token of the local Compose stack | Created from `.env.example` by `make`; not committed |
+| `THREAT_INFO_TLS_CERT_FILE`, `THREAT_INFO_TLS_KEY_FILE` | paths of the TLS certificate and key | Optional; override the `tls` section of the YAML file |
 | `THREAT_INFO_CONFIG_PATH` | path to the YAML file | Overridden by the `-config` flag; defaults to `configs/config.yaml` |
 
 Validation rejects a TLS certificate without a key (and the reverse), non-positive timeouts, a `read_header_timeout` above `read_timeout`, a `min_conns` above `max_conns`, a `max_conn_idle_time` above `max_conn_lifetime`, a `transaction` timeout below the `query` timeout, and an empty or malformed listener address.
@@ -131,7 +132,7 @@ Validation rejects a TLS certificate without a key (and the reverse), non-positi
 | `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
 | `internal/transport/http/health` | Operational endpoints: `/healthz` (liveness) and `/readyz` (readiness, pings the database) |
 | `internal/transport/http/gen` | Generated code. Never edited by hand |
-| `internal/transport/http/middleware` | Request ID, logging, rate limiting, body size limit, `Content-Type` check, OpenAPI validation and bearer authentication |
+| `internal/transport/http/middleware` | Request ID, logging, panic recovery, rate limiting, body size limit, `Content-Type` check, OpenAPI validation and bearer authentication |
 | `api` | The OpenAPI specification |
 | `tests/integration` | Integration tests: the application on a PostgreSQL container, one test per endpoint |
 | `tests/e2e` | End-to-end tests: one test per flow, against a running stack |
