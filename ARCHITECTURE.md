@@ -84,7 +84,7 @@ sequenceDiagram
 
 **Conflicts are decided by the database.** Creation is a bare `INSERT`; a unique violation becomes `ErrConflict`. A "check, then insert" sequence would race between concurrent requests, so it is deliberately absent.
 
-**Time is set by the server.** `created_at` and `updated_at` never come from the client. The service obtains them from a `Clock` interface, so tests are deterministic and the in-memory and PostgreSQL repositories behave identically.
+**Time is set by the server.** `created_at` and `updated_at` never come from the client. The service obtains them from an injected clock function, so tests are deterministic and the in-memory and PostgreSQL repositories behave identically.
 
 **The repository interface belongs to its consumer.** `service` declares the small interface it needs (`Create`, `GetByMD5`, `Update`). `postgres` and `memory` implement it structurally, and `app` asserts that they do. There is no generic repository.
 
@@ -120,7 +120,7 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `internal/app` | Composition root: configuration loading, dependency construction and their lifetime |
 | `internal/config` | Strict YAML decoding, environment secrets, path resolution, validation |
 | `internal/domain` | `Threat`, enumerations, invariants, `ErrNotFound`, `ErrConflict`, `ErrValidation` |
-| `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the `Clock` interface |
+| `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the injected clock |
 | `internal/postgres` | Connection pool, repository, embedded migrations |
 | `internal/memory` | In-memory repository for unit and handler tests |
 | `internal/httpserver` | HTTP server built from the configuration, listener binding, graceful shutdown |
