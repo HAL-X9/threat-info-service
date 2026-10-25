@@ -83,6 +83,17 @@ func TestLoggingRecordsTheRequest(t *testing.T) {
 	}
 }
 
+func TestLoggingRecordsTheRequestID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/info", nil)
+	req.Header.Set(RequestIDHeader, "abc-123")
+
+	rec, _ := serve(t, func(http.ResponseWriter, *http.Request) {}, req)
+
+	if rec["request_id"] != "abc-123" {
+		t.Errorf("request_id = %v, want abc-123", rec["request_id"])
+	}
+}
+
 func TestLoggingDoesNotRecordSecrets(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/info?token=query-secret", nil)
 	req.Header.Set("Authorization", "Bearer header-secret")

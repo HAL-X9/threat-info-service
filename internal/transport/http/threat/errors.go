@@ -7,6 +7,7 @@ import (
 
 	"github.com/HAL-X9/threat-info-service/internal/domain"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/gen"
+	"github.com/HAL-X9/threat-info-service/internal/transport/http/middleware"
 )
 
 func (h *Handler) requestError(w http.ResponseWriter, _ *http.Request, err error) {
@@ -29,7 +30,8 @@ func (h *Handler) responseError(w http.ResponseWriter, r *http.Request, err erro
 	case errors.Is(err, domain.ErrConflict):
 		writeError(w, http.StatusConflict, "Threat already exists", "")
 	default:
-		h.log.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+		h.log.ErrorContext(r.Context(), "request failed",
+			"request_id", r.Header.Get(middleware.RequestIDHeader), "method", r.Method, "path", r.URL.Path, "error", err)
 		writeError(w, http.StatusInternalServerError, "Internal server error", "")
 	}
 }

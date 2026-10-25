@@ -19,6 +19,7 @@ func validConfig() *Config {
 				IdleTimeout:       2 * time.Minute,
 			},
 			MaxHeaderBytes: 1 << 20,
+			MaxBodyBytes:   1 << 16,
 			RateLimit:      RateLimit{RequestsPerSecond: 10, Burst: 20},
 		},
 		Database: Database{
@@ -88,6 +89,14 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 		"negative max_header_bytes": {
 			mutate:  func(c *Config) { c.HTTPServer.MaxHeaderBytes = -1 },
 			wantErr: "max_header_bytes",
+		},
+		"zero max_body_bytes": {
+			mutate:  func(c *Config) { c.HTTPServer.MaxBodyBytes = 0 },
+			wantErr: "max_body_bytes",
+		},
+		"negative max_body_bytes": {
+			mutate:  func(c *Config) { c.HTTPServer.MaxBodyBytes = -1 },
+			wantErr: "max_body_bytes",
 		},
 		"zero requests_per_second": {
 			mutate:  func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = 0 },

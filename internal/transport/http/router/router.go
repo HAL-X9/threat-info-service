@@ -9,16 +9,23 @@ import (
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/threat"
 )
 
-func New(log *slog.Logger, db health.Pinger, threats threat.Service, middlewares ...func(http.Handler) http.Handler) http.Handler {
+type Limits struct {
+	RequestsPerSecond float64
+	Burst             int
+	MaxBodyBytes      int64
+}
+
+func New(log *slog.Logger, db health.Pinger, threats threat.Service, limits Limits) http.Handler {
 	api := http.NewServeMux()
 	threat.NewHandler(threats, log).Register(api)
 
-	var handler http.Handler = api
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		handler = middlewares[i](handler)
-	}
-
-	handler = middleware.Logging(log)(handler)
+	handler := middleware.Chain(
+		middleware.RequestID,
+		middleware.Logging(log),
+		middleware.RateLimit(limits.RequestsPerSecond, limits.Burst),
+		middleware.MaxBody(limits.MaxBodyBytes),
+		middleware.RequireJSON,
+	)(api)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Liveness)

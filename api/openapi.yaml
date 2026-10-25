@@ -70,6 +70,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -108,6 +110,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -156,6 +160,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     PayloadTooLarge:
       description: Тело запроса превышает допустимый размер
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnsupportedMediaType:
+      description: Тело запроса должно быть в формате application/json
       content:
         application/json:
           schema:

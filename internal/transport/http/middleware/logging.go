@@ -20,6 +20,7 @@ func Logging(log *slog.Logger) func(http.Handler) http.Handler {
 
 			status := rw.status()
 			log.LogAttrs(r.Context(), level(status), "http request",
+				slog.String("request_id", r.Header.Get(RequestIDHeader)),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", status),

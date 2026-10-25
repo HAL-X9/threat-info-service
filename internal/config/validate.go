@@ -44,6 +44,10 @@ func validateHTTPServer(cfg *HTTPServer) error {
 		return fmt.Errorf("max_header_bytes cannot be negative")
 	}
 
+	if cfg.MaxBodyBytes <= 0 {
+		return fmt.Errorf("max_body_bytes must be greater than 0")
+	}
+
 	if err := validateRateLimit(&cfg.RateLimit); err != nil {
 		return fmt.Errorf("invalid rate_limit: %w", err)
 	}

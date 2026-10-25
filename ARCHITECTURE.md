@@ -38,7 +38,7 @@ Solid arrows follow the direction of calls and dependencies. Dashed arrows mark 
 
 The sequence below traces `POST /info`, the request that exercises every layer.
 
-1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: panic recovery, request ID, logging, rate limiting, authentication, and validation against the OpenAPI schema. Authentication applies only to the operations that declare a security requirement in the specification (`POST` and `PUT`).
+1. The server accepts the connection and passes the request through the **middleware chain**, outermost first: request ID, logging, rate limiting, the body size limit and the `Content-Type` check. The chain is built in one place, `router.New`, with `middleware.Chain`, and wraps only the API routes: the probes stay outside. Panic recovery, authentication of `POST` and `PUT`, and validation against the OpenAPI schema are planned.
 2. Validation checks what the schema can express: the MD5 pattern, enumerations, length limits, and unknown fields (`additionalProperties: false`). A request that fails is answered `400` in the `ErrorResponse` format.
 3. The generated router calls the handler, which converts the request into a domain value and calls the service.
 4. The service normalizes the input (the MD5 and the tags are lowercased, strings are trimmed), enforces the business invariants, sets `created_at` and `updated_at` from its clock, and calls the repository.
@@ -104,7 +104,7 @@ sequenceDiagram
 
 | Source | Content | Notes |
 |---|---|---|
-| `configs/config.yaml` | log level, HTTP listener, timeouts and per-client rate limit, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
+| `configs/config.yaml` | log level, HTTP listener, timeouts, body size limit and per-client rate limit, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
 | `THREAT_INFO_DATABASE_DSN` | database DSN | Required; rejected if present in YAML |
 | `.env` | database credentials of the local Compose stack | Created from `.env.example` by `make`; not committed |
 | `THREAT_INFO_CONFIG_PATH` | path to the YAML file | Overridden by the `-config` flag; defaults to `configs/config.yaml` |

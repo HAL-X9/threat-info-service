@@ -31,12 +31,14 @@ func (emptyService) Update(context.Context, domain.MD5, domain.Details) (domain.
 	return domain.Threat{}, domain.ErrNotFound
 }
 
-func newRouter(logs *bytes.Buffer, middlewares ...func(http.Handler) http.Handler) http.Handler {
-	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{}, middlewares...)
+func newRouter(logs *bytes.Buffer, limits Limits) http.Handler {
+	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{}, limits)
 }
 
+var roomy = Limits{RequestsPerSecond: 1000, Burst: 1000, MaxBodyBytes: 1 << 16}
+
 func TestRoutes(t *testing.T) {
-	handler := newRouter(new(bytes.Buffer))
+	handler := newRouter(new(bytes.Buffer), roomy)
 
 	tests := map[string]struct {
 		method string
@@ -60,7 +62,10 @@ func TestRoutes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 
-			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			handler.ServeHTTP(rec, req)
 
 			if rec.Code != tc.want {
 				t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
@@ -72,7 +77,7 @@ func TestRoutes(t *testing.T) {
 func TestOnlyAPIRequestsAreLogged(t *testing.T) {
 	var logs bytes.Buffer
 
-	handler := newRouter(&logs)
+	handler := newRouter(&logs, roomy)
 
 	for _, path := range []string{"/healthz", "/readyz"} {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
@@ -89,36 +94,97 @@ func TestOnlyAPIRequestsAreLogged(t *testing.T) {
 	}
 }
 
-func TestMiddlewaresWrapOnlyTheAPI(t *testing.T) {
-	var logs bytes.Buffer
+func serve(handler http.Handler, method, path, contentType, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.RemoteAddr = "192.0.2.1:1000"
 
-	handler := newRouter(&logs, middleware.RateLimit(1, 1))
-
-	status := func(path string) int {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req.RemoteAddr = "192.0.2.1:1000"
-
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		return rec.Code
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
-	if got := status("/info/abc"); got != http.StatusBadRequest {
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	return rec
+}
+
+func TestAPIRequestsPassThroughTheChain(t *testing.T) {
+	var logs bytes.Buffer
+
+	handler := newRouter(&logs, Limits{RequestsPerSecond: 1000, Burst: 1000, MaxBodyBytes: 10})
+
+	tests := map[string]struct {
+		method      string
+		contentType string
+		body        string
+		want        int
+	}{
+		"valid json within the limit": {http.MethodPost, "application/json", "{}", http.StatusBadRequest},
+		"wrong content type":          {http.MethodPost, "text/plain", "{}", http.StatusUnsupportedMediaType},
+		"body over the limit":         {http.MethodPost, "application/json", strings.Repeat("x", 11), http.StatusRequestEntityTooLarge},
+		"get needs no content type":   {http.MethodGet, "", "", http.StatusBadRequest},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := "/info"
+			if tc.method == http.MethodGet {
+				path = "/info/abc"
+			}
+
+			rec := serve(handler, tc.method, path, tc.contentType, tc.body)
+
+			if rec.Code != tc.want {
+				t.Errorf("status = %d, want %d", rec.Code, tc.want)
+			}
+
+			if rec.Header().Get(middleware.RequestIDHeader) == "" {
+				t.Error("the response has no request id, even for a rejected request")
+			}
+		})
+	}
+
+	if got := strings.Count(logs.String(), `"request_id":""`); got != 0 {
+		t.Errorf("%d log lines have an empty request_id: %s", got, logs.String())
+	}
+}
+
+func TestAPIRequestIDFromTheClientIsEchoedAndLogged(t *testing.T) {
+	var logs bytes.Buffer
+
+	handler := newRouter(&logs, roomy)
+
+	req := httptest.NewRequest(http.MethodGet, "/info/abc", nil)
+	req.Header.Set(middleware.RequestIDHeader, "client-42")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get(middleware.RequestIDHeader); got != "client-42" {
+		t.Errorf("response request id = %q, want client-42", got)
+	}
+
+	if !strings.Contains(logs.String(), `"request_id":"client-42"`) {
+		t.Errorf("the log lacks the request id: %s", logs.String())
+	}
+}
+
+func TestRateLimitAppliesToTheAPIOnly(t *testing.T) {
+	handler := newRouter(new(bytes.Buffer), Limits{RequestsPerSecond: 1, Burst: 1, MaxBodyBytes: 1 << 16})
+
+	if got := serve(handler, http.MethodGet, "/info/abc", "", "").Code; got != http.StatusBadRequest {
 		t.Fatalf("first API request = %d, want %d", got, http.StatusBadRequest)
 	}
 
-	if got := status("/info/abc"); got != http.StatusTooManyRequests {
-		t.Errorf("second API request = %d, want %d", got, http.StatusTooManyRequests)
+	rejected := serve(handler, http.MethodGet, "/info/abc", "", "")
+	if rejected.Code != http.StatusTooManyRequests || rejected.Header().Get(middleware.RequestIDHeader) == "" {
+		t.Errorf("second API request = %d, want %d with a request id", rejected.Code, http.StatusTooManyRequests)
 	}
 
 	for range 5 {
-		if got := status("/healthz"); got != http.StatusOK {
-			t.Fatalf("/healthz = %d, want %d: probes must not be rate limited", got, http.StatusOK)
+		probe := serve(handler, http.MethodGet, "/healthz", "", "")
+		if probe.Code != http.StatusOK || probe.Header().Get(middleware.RequestIDHeader) != "" {
+			t.Fatalf("/healthz = %d with request id %q, want an unlimited probe outside the chain", probe.Code, probe.Header().Get(middleware.RequestIDHeader))
 		}
-	}
-
-	if !strings.Contains(logs.String(), `"status":429`) {
-		t.Errorf("the rejected request was not logged: %q", logs.String())
 	}
 }
