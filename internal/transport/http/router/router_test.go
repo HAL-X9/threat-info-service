@@ -8,20 +8,30 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/HAL-X9/threat-info-service/internal/memory"
-	"github.com/HAL-X9/threat-info-service/internal/service"
+	"github.com/HAL-X9/threat-info-service/internal/domain"
 )
 
 type okDB struct{}
 
 func (okDB) Ping(context.Context) error { return nil }
 
-func newRouter(logs *bytes.Buffer) http.Handler {
-	svc := service.New(memory.New(), time.Now)
+type emptyService struct{}
 
-	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, svc)
+func (emptyService) Create(context.Context, domain.MD5, domain.Details) (domain.Threat, error) {
+	return domain.Threat{}, domain.ErrNotFound
+}
+
+func (emptyService) Get(context.Context, domain.MD5) (domain.Threat, error) {
+	return domain.Threat{}, domain.ErrNotFound
+}
+
+func (emptyService) Update(context.Context, domain.MD5, domain.Details) (domain.Threat, error) {
+	return domain.Threat{}, domain.ErrNotFound
+}
+
+func newRouter(logs *bytes.Buffer) http.Handler {
+	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{})
 }
 
 func TestRoutes(t *testing.T) {

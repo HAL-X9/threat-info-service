@@ -38,13 +38,13 @@ erDiagram
 
 **Enumerations are `text` with a `CHECK`.** A native `ENUM` type cannot drop a value and needs its own statements to extend. Adding a severity or a category is one migration that replaces a constraint.
 
-**Timestamps come from the service.** The service sets `created_at` and `updated_at` from an injected clock, so tests are deterministic and the in-memory and PostgreSQL repositories behave the same. The columns have no database default for that reason.
+**Timestamps come from the service.** The service sets `created_at` and `updated_at` from an injected clock, so tests are deterministic and the timestamps do not depend on the database clock. The columns have no database default for that reason.
 
 **No secondary indexes.** Every query reads or writes a single row by the primary key. An index is added together with the first query that needs one.
 
 ## Statements
 
-| Operation | Statement |
+| Operation | Statement (see `internal/repository`) |
 |---|---|
 | Create | `INSERT … RETURNING`; a unique violation means the threat exists |
 | Get | `SELECT … WHERE md5 = $1` |

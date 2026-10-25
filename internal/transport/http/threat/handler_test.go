@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/HAL-X9/threat-info-service/internal/domain"
-	"github.com/HAL-X9/threat-info-service/internal/memory"
 	"github.com/HAL-X9/threat-info-service/internal/service"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/threat"
 )
@@ -39,7 +38,7 @@ func newMux(svc threat.Service, log *slog.Logger) http.Handler {
 }
 
 func newRealMux() http.Handler {
-	return newMux(service.New(memory.New(), func() time.Time { return now }), discardLogger())
+	return newMux(service.New(newFakeRepo(), func() time.Time { return now }), discardLogger())
 }
 
 func do(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -341,4 +340,42 @@ func TestValidationErrorsExplainWhatIsWrong(t *testing.T) {
 	if details, _ := body["details"].(string); !strings.Contains(details, "severity") {
 		t.Errorf("details = %v, want it to mention the severity", body["details"])
 	}
+}
+
+type fakeRepo struct{ threats map[domain.MD5]domain.Threat }
+
+func newFakeRepo() *fakeRepo {
+	return &fakeRepo{threats: make(map[domain.MD5]domain.Threat)}
+}
+
+func (r *fakeRepo) Create(_ context.Context, threat domain.Threat) (domain.Threat, error) {
+	if _, exists := r.threats[threat.MD5]; exists {
+		return domain.Threat{}, domain.ErrConflict
+	}
+
+	r.threats[threat.MD5] = threat
+
+	return threat, nil
+}
+
+func (r *fakeRepo) Get(_ context.Context, md5 domain.MD5) (domain.Threat, error) {
+	threat, exists := r.threats[md5]
+	if !exists {
+		return domain.Threat{}, domain.ErrNotFound
+	}
+
+	return threat, nil
+}
+
+func (r *fakeRepo) Update(_ context.Context, md5 domain.MD5, details domain.Details, now time.Time) (domain.Threat, error) {
+	threat, exists := r.threats[md5]
+	if !exists {
+		return domain.Threat{}, domain.ErrNotFound
+	}
+
+	threat.Details = details
+	threat.UpdatedAt = now
+	r.threats[md5] = threat
+
+	return threat, nil
 }

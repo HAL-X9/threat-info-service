@@ -10,8 +10,8 @@ import (
 
 	"github.com/HAL-X9/threat-info-service/internal/config"
 	"github.com/HAL-X9/threat-info-service/internal/httpserver"
-	"github.com/HAL-X9/threat-info-service/internal/memory"
 	"github.com/HAL-X9/threat-info-service/internal/postgres"
+	"github.com/HAL-X9/threat-info-service/internal/repository"
 	"github.com/HAL-X9/threat-info-service/internal/service"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/router"
 )
@@ -59,7 +59,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.log.Info("database closed")
 	}()
 
-	threats := service.New(memory.New(), time.Now)
+	threats := service.New(repository.NewThreats(pool, a.cfg.Database.Timeouts.Query), time.Now)
 
 	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool, threats), a.log)
 

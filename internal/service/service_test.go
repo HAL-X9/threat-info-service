@@ -9,11 +9,8 @@ import (
 	"time"
 
 	"github.com/HAL-X9/threat-info-service/internal/domain"
-	"github.com/HAL-X9/threat-info-service/internal/memory"
 	"github.com/HAL-X9/threat-info-service/internal/service"
 )
-
-var _ service.Repository = (*memory.Repository)(nil)
 
 const md5 = domain.MD5("d41d8cd98f00b204e9800998ecf8427e")
 
@@ -26,7 +23,7 @@ func (c *clock) Now() time.Time { return c.now }
 func newService() (*service.Service, *clock) {
 	c := &clock{now: start}
 
-	return service.New(memory.New(), c.Now), c
+	return service.New(newFakeRepo(), c.Now), c
 }
 
 func details() domain.Details {
@@ -209,4 +206,42 @@ func TestRepositoryFailuresArePassedThrough(t *testing.T) {
 	if _, err := svc.Update(context.Background(), md5, details()); !errors.Is(err, boom) {
 		t.Errorf("Update error = %v, want %v", err, boom)
 	}
+}
+
+type fakeRepo struct{ threats map[domain.MD5]domain.Threat }
+
+func newFakeRepo() *fakeRepo {
+	return &fakeRepo{threats: make(map[domain.MD5]domain.Threat)}
+}
+
+func (r *fakeRepo) Create(_ context.Context, threat domain.Threat) (domain.Threat, error) {
+	if _, exists := r.threats[threat.MD5]; exists {
+		return domain.Threat{}, domain.ErrConflict
+	}
+
+	r.threats[threat.MD5] = threat
+
+	return threat, nil
+}
+
+func (r *fakeRepo) Get(_ context.Context, md5 domain.MD5) (domain.Threat, error) {
+	threat, exists := r.threats[md5]
+	if !exists {
+		return domain.Threat{}, domain.ErrNotFound
+	}
+
+	return threat, nil
+}
+
+func (r *fakeRepo) Update(_ context.Context, md5 domain.MD5, details domain.Details, now time.Time) (domain.Threat, error) {
+	threat, exists := r.threats[md5]
+	if !exists {
+		return domain.Threat{}, domain.ErrNotFound
+	}
+
+	threat.Details = details
+	threat.UpdatedAt = now
+	r.threats[md5] = threat
+
+	return threat, nil
 }

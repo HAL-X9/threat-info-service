@@ -9,7 +9,7 @@ The service is organized as a stack of layers with a single rule: **dependencies
 - **Contract** — [api/openapi.yaml](api/openapi.yaml) is the single source of truth for the HTTP interface. The server interface and the request/response types are generated from it, and requests are validated against the same schema they are documented with, so the specification and the implementation cannot drift apart.
 - **Domain** — the `Threat` model, its enumerations, its invariants, and the typed errors. It imports nothing from the project.
 - **Service** — the use cases `Create`, `Get` and `Update`. It depends on the domain and on a small storage interface that it declares itself.
-- **Adapters** — the PostgreSQL repository, the in-memory repository used by tests, and the HTTP transport. They depend on the service and the domain, never the other way around.
+- **Adapters** — the PostgreSQL repository and the HTTP transport. They depend on the service and the domain, never the other way around.
 - **Composition root** — `internal/app` is the only package that knows every other one. It builds the dependencies, owns their lifetime, and wires them together.
 
 The goal is not an "enterprise" structure: each boundary exists because it removes a concrete dependency, and a layer that does not pay for itself is not introduced (see "Non-goals").
@@ -22,19 +22,17 @@ flowchart TB
     SVC["Service"]
     DOM["Domain"]
     STORE["Storage interface"]
-    PG["postgres"]
-    MEM["memory"]
+    REPO["repository"]
 
     CLIENT --> HTTP --> SVC
     SVC --> DOM
     SVC --> STORE
-    PG -. implements .-> STORE
-    MEM -. implements .-> STORE
+    REPO -. implements .-> STORE
 
     classDef default fill:#e5f3ff,stroke:none,color:#22559b;
 ```
 
-Solid arrows follow the direction of calls and dependencies. Dashed arrows mark interface implementation: `service` declares the storage interface, and `postgres` and `memory` satisfy it without importing `service`.
+Solid arrows follow the direction of calls and dependencies. Dashed arrows mark interface implementation: `service` declares the storage interface, and `repository` satisfies it without importing `service`.
 
 ## Request lifecycle
 
@@ -84,9 +82,9 @@ sequenceDiagram
 
 **Conflicts are decided by the database.** Creation is a bare `INSERT`; a unique violation becomes `ErrConflict`. A "check, then insert" sequence would race between concurrent requests, so it is deliberately absent.
 
-**Time is set by the server.** `created_at` and `updated_at` never come from the client. The service obtains them from an injected clock function, so tests are deterministic and the in-memory and PostgreSQL repositories behave identically.
+**Time is set by the server.** `created_at` and `updated_at` never come from the client. The service obtains them from an injected clock function, so tests are deterministic and the timestamps do not depend on the database clock.
 
-**The repository interface belongs to its consumer.** `service` declares the small interface it needs (`Create`, `GetByMD5`, `Update`). `postgres` and `memory` implement it structurally, and `app` asserts that they do. There is no generic repository.
+**The repository interface belongs to its consumer.** `service` declares the small interface it needs (`Create`, `GetByMD5`, `Update`). `repository` implements it structurally, and `app` wires the two together. There is no generic repository.
 
 **Configuration is split by sensitivity.** Non-secret values (listener address, timeouts, pool sizing, log level) are read from a strict YAML file; unknown keys are rejected. Secrets (the database DSN, access tokens) are read only from environment variables, and a `dsn` key in YAML is an error, so a credential cannot be committed by accident. The merged result is validated once, at startup, and the process refuses to start on any error. See [Configuration](#configuration).
 
@@ -121,9 +119,9 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `internal/config` | Strict YAML decoding, environment secrets, path resolution, validation |
 | `internal/domain` | `Threat`, enumerations, invariants, `ErrNotFound`, `ErrConflict`, `ErrValidation` |
 | `internal/service` | `ThreatService` use cases, input normalization, the repository interface, the injected clock |
-| `internal/postgres` | Connection pool and repository |
+| `internal/postgres` | Connection pool |
+| `internal/repository` | PostgreSQL repository: the SQL of the three operations and the mapping of database errors to domain errors |
 | `migrations` | SQL migrations, applied with goose (see [docs/migrations.md](docs/migrations.md)) |
-| `internal/memory` | In-memory repository for unit and handler tests |
 | `internal/httpserver` | HTTP server built from the configuration, listener binding, graceful shutdown |
 | `internal/transport/http/router` | Route registration: the single place that maps paths to handlers |
 | `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
