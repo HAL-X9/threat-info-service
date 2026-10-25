@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -264,5 +265,26 @@ func TestReadyzReportsUnavailableWhenTheDatabaseGoesDown(t *testing.T) {
 
 	if msgs := messages(t, svc.logs); !slices.Contains(msgs, "readiness check failed") {
 		t.Errorf("log messages = %q, want the readiness failure to be logged", msgs)
+	}
+}
+
+func TestDataSurvivesARestart(t *testing.T) {
+	_, dsn := startPostgres(t)
+	applyMigrations(t, dsn)
+
+	first := startService(t, dsn)
+	waitForStatus(t, "http://"+first.addr+"/readyz", http.StatusOK, 15*time.Second)
+	created := createThreat(t, "http://"+first.addr, hashN(1), "Persisted")
+
+	if err := first.stop(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	second := startService(t, dsn)
+	waitForStatus(t, "http://"+second.addr+"/readyz", http.StatusOK, 15*time.Second)
+
+	code, got := call(t, http.MethodGet, "http://"+second.addr+"/info/"+hashN(1), "")
+	if code != http.StatusOK || !reflect.DeepEqual(got, created) {
+		t.Errorf("GET after a restart = %d %v, want %v", code, got, created)
 	}
 }

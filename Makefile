@@ -61,6 +61,10 @@ test: ## Run the tests with the race detector
 test-integration: ## Run the integration tests (needs Docker)
 	go test -race -tags integration ./tests/integration/...
 
+.PHONY: test-e2e
+test-e2e: ## Run the end-to-end tests against the running stack (make up first)
+	go test -count=1 -tags e2e ./tests/e2e/...
+
 .PHONY: lint
 lint: ## Run golangci-lint
 	golangci-lint run ./...

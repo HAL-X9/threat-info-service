@@ -4,6 +4,7 @@ version: "2"
 run:
   build-tags:
     - integration
+    - e2e
 
 linters:
   # Standard set: errcheck, govet, ineffassign, staticcheck, unused.
