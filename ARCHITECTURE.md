@@ -104,8 +104,9 @@ sequenceDiagram
 
 | Source | Content | Notes |
 |---|---|---|
-| `configs/config.yaml` | log level, HTTP listener and timeouts, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
+| `configs/config.yaml` | log level, HTTP listener, timeouts and per-client rate limit, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
 | `THREAT_INFO_DATABASE_DSN` | database DSN | Required; rejected if present in YAML |
+| `.env` | database credentials of the local Compose stack | Created from `.env.example` by `make`; not committed |
 | `THREAT_INFO_CONFIG_PATH` | path to the YAML file | Overridden by the `-config` flag; defaults to `configs/config.yaml` |
 
 Validation rejects non-positive timeouts, a `read_header_timeout` above `read_timeout`, a `min_conns` above `max_conns`, a `max_conn_idle_time` above `max_conn_lifetime`, a `transaction` timeout below the `query` timeout, and an empty or malformed listener address.

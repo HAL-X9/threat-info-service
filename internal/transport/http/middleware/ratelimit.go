@@ -9,12 +9,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func RateLimit(limit rate.Limit, burst int) func(http.Handler) http.Handler {
+func RateLimit(requestsPerSecond float64, burst int) func(http.Handler) http.Handler {
 	var limiters sync.Map
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			limiter, _ := limiters.LoadOrStore(remoteIP(r), rate.NewLimiter(limit, burst))
+			limiter, _ := limiters.LoadOrStore(remoteIP(r), rate.NewLimiter(rate.Limit(requestsPerSecond), burst))
 
 			reservation := limiter.(*rate.Limiter).Reserve()
 			if delay := reservation.Delay(); delay > 0 {

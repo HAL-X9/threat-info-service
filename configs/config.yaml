@@ -12,6 +12,10 @@ httpserver:
 
   max_header_bytes: 1048576
 
+  rate_limit:
+    requests_per_second: 10
+    burst: 20
+
 database:
   pool:
     min_conns: 2

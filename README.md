@@ -22,7 +22,7 @@ cd threat-info-service
 make up
 ```
 
-The command starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
+The command creates `.env` from [`.env.example`](.env.example) on the first run, starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. The example file holds ready-to-use test credentials for the local database, so nothing has to be configured. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
 
 ### Run from source
 

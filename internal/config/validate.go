@@ -44,6 +44,23 @@ func validateHTTPServer(cfg *HTTPServer) error {
 		return fmt.Errorf("max_header_bytes cannot be negative")
 	}
 
+	if err := validateRateLimit(&cfg.RateLimit); err != nil {
+		return fmt.Errorf("invalid rate_limit: %w", err)
+	}
+
+	return nil
+}
+
+// validateRateLimit validates the per-client request rate limit.
+func validateRateLimit(cfg *RateLimit) error {
+	if cfg.RequestsPerSecond <= 0 {
+		return fmt.Errorf("requests_per_second must be greater than 0")
+	}
+
+	if cfg.Burst < 1 {
+		return fmt.Errorf("burst must be at least 1")
+	}
+
 	return nil
 }
 

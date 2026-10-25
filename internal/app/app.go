@@ -13,6 +13,7 @@ import (
 	"github.com/HAL-X9/threat-info-service/internal/postgres"
 	"github.com/HAL-X9/threat-info-service/internal/repository"
 	"github.com/HAL-X9/threat-info-service/internal/service"
+	"github.com/HAL-X9/threat-info-service/internal/transport/http/middleware"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/router"
 )
 
@@ -61,7 +62,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	threats := service.New(repository.NewThreats(pool, a.cfg.Database.Timeouts.Query), time.Now)
 
-	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool, threats), a.log)
+	rateLimit := a.cfg.HTTPServer.RateLimit
+	handler := router.New(a.log, pool, threats, middleware.RateLimit(rateLimit.RequestsPerSecond, rateLimit.Burst))
+
+	server := httpserver.New(a.cfg.HTTPServer, handler, a.log)
 
 	return server.Run(ctx)
 }

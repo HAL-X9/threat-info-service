@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/HAL-X9/threat-info-service/internal/domain"
+	"github.com/HAL-X9/threat-info-service/internal/transport/http/middleware"
 )
 
 type okDB struct{}
@@ -30,8 +31,8 @@ func (emptyService) Update(context.Context, domain.MD5, domain.Details) (domain.
 	return domain.Threat{}, domain.ErrNotFound
 }
 
-func newRouter(logs *bytes.Buffer) http.Handler {
-	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{})
+func newRouter(logs *bytes.Buffer, middlewares ...func(http.Handler) http.Handler) http.Handler {
+	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{}, middlewares...)
 }
 
 func TestRoutes(t *testing.T) {
@@ -85,5 +86,39 @@ func TestOnlyAPIRequestsAreLogged(t *testing.T) {
 
 	if !strings.Contains(logs.String(), `"path":"/info/abc"`) {
 		t.Errorf("the API request was not logged: %q", logs.String())
+	}
+}
+
+func TestMiddlewaresWrapOnlyTheAPI(t *testing.T) {
+	var logs bytes.Buffer
+
+	handler := newRouter(&logs, middleware.RateLimit(1, 1))
+
+	status := func(path string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "192.0.2.1:1000"
+
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		return rec.Code
+	}
+
+	if got := status("/info/abc"); got != http.StatusBadRequest {
+		t.Fatalf("first API request = %d, want %d", got, http.StatusBadRequest)
+	}
+
+	if got := status("/info/abc"); got != http.StatusTooManyRequests {
+		t.Errorf("second API request = %d, want %d", got, http.StatusTooManyRequests)
+	}
+
+	for range 5 {
+		if got := status("/healthz"); got != http.StatusOK {
+			t.Fatalf("/healthz = %d, want %d: probes must not be rate limited", got, http.StatusOK)
+		}
+	}
+
+	if !strings.Contains(logs.String(), `"status":429`) {
+		t.Errorf("the rejected request was not logged: %q", logs.String())
 	}
 }

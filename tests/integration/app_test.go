@@ -73,9 +73,13 @@ func startService(t *testing.T, dsn string) *service {
 		t.Fatalf("read shipped config: %v", err)
 	}
 
-	doc := strings.Replace(string(src), `":8080"`, `"`+addr+`"`, 1)
-	if doc == string(src) {
-		t.Fatal("shipped config has no :8080 address to replace")
+	doc := strings.NewReplacer(
+		`":8080"`, `"`+addr+`"`,
+		"requests_per_second: 10", "requests_per_second: 1000",
+		"burst: 20", "burst: 1000",
+	).Replace(string(src))
+	if !strings.Contains(doc, addr) || !strings.Contains(doc, "burst: 1000") {
+		t.Fatal("shipped config lacks the address or the rate limit to override")
 	}
 
 	path := filepath.Join(t.TempDir(), "config.yaml")

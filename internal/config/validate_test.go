@@ -19,6 +19,7 @@ func validConfig() *Config {
 				IdleTimeout:       2 * time.Minute,
 			},
 			MaxHeaderBytes: 1 << 20,
+			RateLimit:      RateLimit{RequestsPerSecond: 10, Burst: 20},
 		},
 		Database: Database{
 			DSN: testDSN,
@@ -47,6 +48,8 @@ func TestValidateAcceptsValidConfig(t *testing.T) {
 func TestValidateAcceptsBoundaryValues(t *testing.T) {
 	tests := map[string]func(*Config){
 		"zero max_header_bytes uses the net/http default": func(c *Config) { c.HTTPServer.MaxHeaderBytes = 0 },
+		"fractional rate": func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = 0.5 },
+		"burst of one":    func(c *Config) { c.HTTPServer.RateLimit.Burst = 1 },
 		"read_header_timeout equals read_timeout": func(c *Config) {
 			c.HTTPServer.Timeouts.ReadHeaderTimeout = c.HTTPServer.Timeouts.ReadTimeout
 		},
@@ -85,6 +88,18 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 		"negative max_header_bytes": {
 			mutate:  func(c *Config) { c.HTTPServer.MaxHeaderBytes = -1 },
 			wantErr: "max_header_bytes",
+		},
+		"zero requests_per_second": {
+			mutate:  func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = 0 },
+			wantErr: "requests_per_second",
+		},
+		"negative requests_per_second": {
+			mutate:  func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = -1 },
+			wantErr: "requests_per_second",
+		},
+		"zero burst": {
+			mutate:  func(c *Config) { c.HTTPServer.RateLimit.Burst = 0 },
+			wantErr: "burst",
 		},
 		"zero read_timeout": {
 			mutate:  func(c *Config) { c.HTTPServer.Timeouts.ReadTimeout = 0 },

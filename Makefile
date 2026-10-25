@@ -3,14 +3,20 @@ BIN_DIR := bin
 
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
-THREAT_INFO_DATABASE_DSN ?= postgres://threats:threats@localhost:5432/threats?sslmode=disable
+-include .env
+export POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+
+THREAT_INFO_DATABASE_DSN ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable
 export THREAT_INFO_DATABASE_DSN
 
 .DEFAULT_GOAL := help
 
+.env:
+	cp .env.example .env
+
 .PHONY: help
 help:
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
 .PHONY: up
 up: db migrate-up ## Start everything: database, migrations, service

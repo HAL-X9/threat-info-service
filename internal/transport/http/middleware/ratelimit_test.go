@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/time/rate"
 )
 
 var ok = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -77,7 +75,7 @@ func TestRateLimitTracksClientsSeparately(t *testing.T) {
 }
 
 func TestRateLimitRefillsOverTime(t *testing.T) {
-	handler := RateLimit(rate.Every(20*time.Millisecond), 1)(ok)
+	handler := RateLimit(50, 1)(ok)
 
 	hit(handler, "192.0.2.1:1000")
 
@@ -93,7 +91,7 @@ func TestRateLimitRefillsOverTime(t *testing.T) {
 }
 
 func TestRateLimitRejectedRequestsDoNotConsumeTokens(t *testing.T) {
-	handler := RateLimit(rate.Every(50*time.Millisecond), 1)(ok)
+	handler := RateLimit(20, 1)(ok)
 
 	hit(handler, "192.0.2.1:1000")
 

@@ -9,6 +9,12 @@ type HTTPServer struct {
 	Addr           string       `yaml:"addr"`
 	Timeouts       HTTPTimeouts `yaml:"timeouts"`
 	MaxHeaderBytes int          `yaml:"max_header_bytes"`
+	RateLimit      RateLimit    `yaml:"rate_limit"`
+}
+
+type RateLimit struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second"`
+	Burst             int     `yaml:"burst"`
 }
 
 type HTTPTimeouts struct {

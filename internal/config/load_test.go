@@ -26,6 +26,10 @@ httpserver:
     idle_timeout: 120s
   max_header_bytes: 1048576
 
+  rate_limit:
+    requests_per_second: 10
+    burst: 20
+
 database:
   pool:
     min_conns: 2
@@ -66,6 +70,10 @@ func TestLoadValidDocument(t *testing.T) {
 
 	if cfg.HTTPServer.Addr != ":8080" {
 		t.Errorf("HTTPServer.Addr = %q, want :8080", cfg.HTTPServer.Addr)
+	}
+
+	if cfg.HTTPServer.RateLimit != (RateLimit{RequestsPerSecond: 10, Burst: 20}) {
+		t.Errorf("RateLimit = %+v, want 10 requests per second with a burst of 20", cfg.HTTPServer.RateLimit)
 	}
 
 	if cfg.HTTPServer.Timeouts.ReadHeaderTimeout != 5*time.Second {
@@ -118,6 +126,7 @@ func TestLoadRejectsBadDocuments(t *testing.T) {
 		"unknown nested key":   strings.Replace(validYAML, "addr:", "adrr:", 1),
 		"malformed duration":   strings.Replace(validYAML, "read_timeout: 10s", "read_timeout: soon", 1),
 		"unknown log level":    strings.Replace(validYAML, "level: debug", "level: verbose", 1),
+		"zero rate limit":      strings.Replace(validYAML, "requests_per_second: 10", "requests_per_second: 0", 1),
 		"wrong type":           strings.Replace(validYAML, "max_header_bytes: 1048576", "max_header_bytes: lots", 1),
 		"invalid yaml":         "httpserver: [",
 		"empty file":           "",
