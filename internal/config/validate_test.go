@@ -50,8 +50,9 @@ func TestValidateAcceptsValidConfig(t *testing.T) {
 func TestValidateAcceptsBoundaryValues(t *testing.T) {
 	tests := map[string]func(*Config){
 		"zero max_header_bytes uses the net/http default": func(c *Config) { c.HTTPServer.MaxHeaderBytes = 0 },
-		"fractional rate": func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = 0.5 },
-		"burst of one":    func(c *Config) { c.HTTPServer.RateLimit.Burst = 1 },
+		"tls certificate and key":                         func(c *Config) { c.HTTPServer.TLS = TLS{CertFile: "cert.pem", KeyFile: "key.pem"} },
+		"fractional rate":                                 func(c *Config) { c.HTTPServer.RateLimit.RequestsPerSecond = 0.5 },
+		"burst of one":                                    func(c *Config) { c.HTTPServer.RateLimit.Burst = 1 },
 		"read_header_timeout equals read_timeout": func(c *Config) {
 			c.HTTPServer.Timeouts.ReadHeaderTimeout = c.HTTPServer.Timeouts.ReadTimeout
 		},
@@ -94,6 +95,14 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 		"no api token": {
 			mutate:  func(c *Config) { c.APIToken = "" },
 			wantErr: "token",
+		},
+		"tls certificate without a key": {
+			mutate:  func(c *Config) { c.HTTPServer.TLS = TLS{CertFile: "cert.pem"} },
+			wantErr: "tls",
+		},
+		"tls key without a certificate": {
+			mutate:  func(c *Config) { c.HTTPServer.TLS = TLS{KeyFile: "key.pem"} },
+			wantErr: "tls",
 		},
 		"zero max_body_bytes": {
 			mutate:  func(c *Config) { c.HTTPServer.MaxBodyBytes = 0 },

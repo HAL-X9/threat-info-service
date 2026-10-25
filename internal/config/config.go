@@ -11,6 +11,16 @@ type HTTPServer struct {
 	MaxHeaderBytes int          `yaml:"max_header_bytes"`
 	MaxBodyBytes   int64        `yaml:"max_body_bytes"`
 	RateLimit      RateLimit    `yaml:"rate_limit"`
+	TLS            TLS          `yaml:"tls"`
+}
+
+type TLS struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+}
+
+func (t TLS) Enabled() bool {
+	return t.CertFile != ""
 }
 
 type RateLimit struct {

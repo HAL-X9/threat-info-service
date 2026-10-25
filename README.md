@@ -55,6 +55,28 @@ curl -i http://localhost:8080/info/d41d8cd98f00b204e9800998ecf8427e
 
 `GET /healthz` reports that the process is alive, and `GET /readyz` that the database responds. The full description, with the model, the errors and the limits, is in [docs/api.md](docs/api.md).
 
+## TLS
+
+The service serves plain HTTP unless the configuration names a certificate. To try TLS from source, create a self-signed certificate and add it to [`configs/config.yaml`](configs/config.yaml):
+
+```bash
+make cert
+```
+
+```yaml
+httpserver:
+  tls:
+    cert_file: certs/cert.pem
+    key_file: certs/key.pem
+```
+
+```bash
+make run
+curl --cacert certs/cert.pem https://localhost:8080/readyz
+```
+
+The server accepts TLS 1.2 and later, negotiates HTTP/2, and refuses to start when the certificate cannot be loaded. The Compose stack serves plain HTTP, and its health check assumes it.
+
 ## Tests
 
 | Command | Scope |

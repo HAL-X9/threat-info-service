@@ -71,7 +71,10 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("router: %w", err)
 	}
 
-	server := httpserver.New(a.cfg.HTTPServer, handler, a.log)
+	server, err := httpserver.New(a.cfg.HTTPServer, handler, a.log)
+	if err != nil {
+		return fmt.Errorf("http server: %w", err)
+	}
 
 	return server.Run(ctx)
 }

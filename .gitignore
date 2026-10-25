@@ -113,3 +113,5 @@ Temporary Items
 ## S/MIME message
 *.smime
 
+# Local TLS certificates
+certs/

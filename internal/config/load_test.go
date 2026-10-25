@@ -232,3 +232,29 @@ func TestLoadRequiresTheToken(t *testing.T) {
 		t.Fatalf("Load error = %v, want an error about the missing token", err)
 	}
 }
+
+func TestLoadReadsTheTLSSection(t *testing.T) {
+	doc := strings.Replace(validYAML, "  max_body_bytes: 65536\n",
+		"  max_body_bytes: 65536\n\n  tls:\n    cert_file: certs/cert.pem\n    key_file: certs/key.pem\n", 1)
+
+	cfg, err := Load(writeConfig(t, doc), env(secrets()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	want := TLS{CertFile: "certs/cert.pem", KeyFile: "certs/key.pem"}
+	if cfg.HTTPServer.TLS != want || !cfg.HTTPServer.TLS.Enabled() {
+		t.Errorf("TLS = %+v, want %+v enabled", cfg.HTTPServer.TLS, want)
+	}
+}
+
+func TestLoadLeavesTLSOffByDefault(t *testing.T) {
+	cfg, err := Load(writeConfig(t, validYAML), env(secrets()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.HTTPServer.TLS.Enabled() {
+		t.Errorf("TLS = %+v, want it off when the section is absent", cfg.HTTPServer.TLS)
+	}
+}

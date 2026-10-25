@@ -52,6 +52,10 @@ func validateHTTPServer(cfg *HTTPServer) error {
 		return fmt.Errorf("max_body_bytes must be greater than 0")
 	}
 
+	if (cfg.TLS.CertFile == "") != (cfg.TLS.KeyFile == "") {
+		return fmt.Errorf("tls cert_file and key_file must be set together")
+	}
+
 	if err := validateRateLimit(&cfg.RateLimit); err != nil {
 		return fmt.Errorf("invalid rate_limit: %w", err)
 	}

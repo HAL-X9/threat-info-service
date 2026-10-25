@@ -56,6 +56,13 @@ run: db migrate-up ## Run the service from source
 build: ## Build the binary into bin/
 	CGO_ENABLED=0 go build -o $(BIN_DIR)/$(APP_NAME) ./cmd
 
+.PHONY: cert
+cert: ## Create a self-signed certificate for local TLS in certs/
+	mkdir -p certs
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 365 \
+		-subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+		-keyout certs/key.pem -out certs/cert.pem
+
 .PHONY: generate
 generate: ## Regenerate the API code from the OpenAPI spec
 	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml

@@ -106,13 +106,13 @@ sequenceDiagram
 
 | Source | Content | Notes |
 |---|---|---|
-| `configs/config.yaml` | log level, HTTP listener, timeouts, body size limit and per-client rate limit, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
+| `configs/config.yaml` | log level, HTTP listener, timeouts, body size limit, per-client rate limit and optional TLS certificate, pool sizing, database timeouts | Strict decoding: unknown keys fail the load |
 | `THREAT_INFO_DATABASE_DSN` | database DSN | Required; rejected if present in YAML |
 | `THREAT_INFO_API_TOKEN` | bearer token that authorizes `POST` and `PUT` | Required |
 | `.env` | database credentials and the API token of the local Compose stack | Created from `.env.example` by `make`; not committed |
 | `THREAT_INFO_CONFIG_PATH` | path to the YAML file | Overridden by the `-config` flag; defaults to `configs/config.yaml` |
 
-Validation rejects non-positive timeouts, a `read_header_timeout` above `read_timeout`, a `min_conns` above `max_conns`, a `max_conn_idle_time` above `max_conn_lifetime`, a `transaction` timeout below the `query` timeout, and an empty or malformed listener address.
+Validation rejects a TLS certificate without a key (and the reverse), non-positive timeouts, a `read_header_timeout` above `read_timeout`, a `min_conns` above `max_conns`, a `max_conn_idle_time` above `max_conn_lifetime`, a `transaction` timeout below the `query` timeout, and an empty or malformed listener address.
 
 ## Package layout
 
@@ -126,7 +126,7 @@ Validation rejects non-positive timeouts, a `read_header_timeout` above `read_ti
 | `internal/postgres` | Connection pool |
 | `internal/repository` | PostgreSQL repository: the SQL of the three operations and the mapping of database errors to domain errors |
 | `migrations` | SQL migrations, applied with goose (see [docs/migrations.md](docs/migrations.md)) |
-| `internal/httpserver` | HTTP server built from the configuration, listener binding, graceful shutdown |
+| `internal/httpserver` | HTTP server built from the configuration, optional TLS (1.2 and later), listener binding, graceful shutdown |
 | `internal/transport/http/router` | Route registration: the single place that maps paths to handlers |
 | `internal/transport/http/threat` | Handlers implementing the generated server interface, error mapping |
 | `internal/transport/http/health` | Operational endpoints: `/healthz` (liveness) and `/readyz` (readiness, pings the database) |

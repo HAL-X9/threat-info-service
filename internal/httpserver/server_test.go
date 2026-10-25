@@ -14,8 +14,8 @@ import (
 	"github.com/HAL-X9/threat-info-service/internal/config"
 )
 
-func newServer(addr string, logs *bytes.Buffer) *Server {
-	cfg := config.HTTPServer{
+func httpConfig(addr string) config.HTTPServer {
+	return config.HTTPServer{
 		Addr: addr,
 		Timeouts: config.HTTPTimeouts{
 			ReadTimeout:       time.Second,
@@ -24,9 +24,25 @@ func newServer(addr string, logs *bytes.Buffer) *Server {
 			IdleTimeout:       time.Second,
 		},
 	}
+}
+
+func newServerWith(t *testing.T, cfg config.HTTPServer, logs *bytes.Buffer) *Server {
+	t.Helper()
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
-	return New(cfg, handler, slog.New(slog.NewJSONHandler(logs, nil)))
+	srv, err := New(cfg, handler, slog.New(slog.NewJSONHandler(logs, nil)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return srv
+}
+
+func newServer(t *testing.T, addr string, logs *bytes.Buffer) *Server {
+	t.Helper()
+
+	return newServerWith(t, httpConfig(addr), logs)
 }
 
 // messages returns the msg field of every JSON log line.
@@ -71,7 +87,7 @@ func TestRunServesAndStopsOnCancel(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- newServer(addr, &logs).Run(ctx) }()
+	go func() { done <- newServer(t, addr, &logs).Run(ctx) }()
 
 	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	deadline := time.Now().Add(3 * time.Second)
@@ -126,7 +142,7 @@ func TestRunFailsWhenAddressIsTaken(t *testing.T) {
 
 	var logs bytes.Buffer
 
-	if err = newServer(taken.Addr().String(), &logs).Run(context.Background()); err == nil {
+	if err = newServer(t, taken.Addr().String(), &logs).Run(context.Background()); err == nil {
 		t.Fatal("Run succeeded although the address was taken, want an error")
 	}
 
