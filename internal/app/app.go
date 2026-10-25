@@ -61,13 +61,17 @@ func (a *App) Run(ctx context.Context) error {
 
 	threats := service.New(repository.NewThreats(pool, a.cfg.Database.Timeouts.Query), time.Now)
 
-	limits := router.Limits{
+	handler, err := router.New(a.log, pool, threats, router.Options{
 		RequestsPerSecond: a.cfg.HTTPServer.RateLimit.RequestsPerSecond,
 		Burst:             a.cfg.HTTPServer.RateLimit.Burst,
 		MaxBodyBytes:      a.cfg.HTTPServer.MaxBodyBytes,
+		APIToken:          a.cfg.APIToken,
+	})
+	if err != nil {
+		return fmt.Errorf("router: %w", err)
 	}
 
-	server := httpserver.New(a.cfg.HTTPServer, router.New(a.log, pool, threats, limits), a.log)
+	server := httpserver.New(a.cfg.HTTPServer, handler, a.log)
 
 	return server.Run(ctx)
 }

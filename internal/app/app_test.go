@@ -19,7 +19,7 @@ func env(vars map[string]string) func(string) string {
 }
 
 func TestNewLoadsTheShippedConfig(t *testing.T) {
-	getenv := env(map[string]string{config.EnvDatabaseDSN: "postgres://user:pass@localhost:5432/threats"})
+	getenv := env(map[string]string{config.EnvDatabaseDSN: "postgres://user:pass@localhost:5432/threats", config.EnvAPIToken: "local-test-token-12345"})
 
 	if _, err := New([]string{"-config", shippedConfig}, getenv, io.Discard); err != nil {
 		t.Fatalf("New: %v", err)
@@ -29,7 +29,7 @@ func TestNewLoadsTheShippedConfig(t *testing.T) {
 func TestNewLogsTheLoadedConfiguration(t *testing.T) {
 	var out bytes.Buffer
 
-	getenv := env(map[string]string{config.EnvDatabaseDSN: "postgres://user:pass@localhost:5432/threats"})
+	getenv := env(map[string]string{config.EnvDatabaseDSN: "postgres://user:pass@localhost:5432/threats", config.EnvAPIToken: "local-test-token-12345"})
 
 	if _, err := New([]string{"-config", shippedConfig}, getenv, &out); err != nil {
 		t.Fatalf("New: %v", err)
@@ -60,7 +60,7 @@ func TestNewRejectsBadInput(t *testing.T) {
 	}{
 		"missing config file": {
 			args: []string{"-config", filepath.Join(t.TempDir(), "missing.yaml")},
-			env:  map[string]string{config.EnvDatabaseDSN: "postgres://localhost/threats"},
+			env:  map[string]string{config.EnvDatabaseDSN: "postgres://localhost/threats", config.EnvAPIToken: "local-test-token-12345"},
 		},
 		"missing dsn": {
 			args: []string{"-config", shippedConfig},
@@ -82,6 +82,7 @@ func TestNewRejectsBadInput(t *testing.T) {
 func TestRunFailsWhenDatabaseIsUnreachable(t *testing.T) {
 	getenv := env(map[string]string{
 		config.EnvDatabaseDSN: "postgres://user:pass@127.0.0.1:1/threats?sslmode=disable",
+		config.EnvAPIToken:    "local-test-token-12345",
 	})
 
 	a, err := New([]string{"-config", shippedConfig}, getenv, io.Discard)

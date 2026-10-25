@@ -1,30 +1,39 @@
 package router
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
+	"github.com/HAL-X9/threat-info-service/internal/transport/http/gen"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/health"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/middleware"
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/threat"
 )
 
-type Limits struct {
+type Options struct {
 	RequestsPerSecond float64
 	Burst             int
 	MaxBodyBytes      int64
+	APIToken          string
 }
 
-func New(log *slog.Logger, db health.Pinger, threats threat.Service, limits Limits) http.Handler {
+func New(log *slog.Logger, db health.Pinger, threats threat.Service, opts Options) (http.Handler, error) {
+	spec, err := gen.GetSpec()
+	if err != nil {
+		return nil, fmt.Errorf("load the OpenAPI spec: %w", err)
+	}
+
 	api := http.NewServeMux()
 	threat.NewHandler(threats, log).Register(api)
 
 	handler := middleware.Chain(
 		middleware.RequestID,
 		middleware.Logging(log),
-		middleware.RateLimit(limits.RequestsPerSecond, limits.Burst),
-		middleware.MaxBody(limits.MaxBodyBytes),
+		middleware.RateLimit(opts.RequestsPerSecond, opts.Burst),
+		middleware.MaxBody(opts.MaxBodyBytes),
 		middleware.RequireJSON,
+		middleware.OpenAPI(spec, opts.APIToken),
 	)(api)
 
 	mux := http.NewServeMux()
@@ -33,5 +42,5 @@ func New(log *slog.Logger, db health.Pinger, threats threat.Service, limits Limi
 	mux.Handle("/info", handler)
 	mux.Handle("/info/", handler)
 
-	return mux
+	return mux, nil
 }

@@ -61,7 +61,15 @@ func newAPI(t *testing.T) string {
 	return base
 }
 
+const apiToken = "local-test-token-12345"
+
 func call(t *testing.T, method, url, body string) (int, map[string]any) {
+	t.Helper()
+
+	return callAs(t, "Bearer "+apiToken, method, url, body)
+}
+
+func callAs(t *testing.T, authorization, method, url, body string) (int, map[string]any) {
 	t.Helper()
 
 	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
@@ -70,6 +78,10 @@ func call(t *testing.T, method, url, body string) (int, map[string]any) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

@@ -83,6 +83,7 @@ func TestCreateThreat(t *testing.T) {
 
 				req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/info", strings.NewReader(threatJSON(hashN(4), "race")))
 				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer "+apiToken)
 
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
@@ -100,6 +101,33 @@ func TestCreateThreat(t *testing.T) {
 
 		if codes[http.StatusCreated] != 1 || codes[http.StatusConflict] != workers-1 {
 			t.Errorf("status counts = %v, want one 201 and %d 409", codes, workers-1)
+		}
+	})
+
+	t.Run("requires a valid token and stores nothing without it", func(t *testing.T) {
+		md5 := hashN(6)
+
+		for _, authorization := range []string{"", "Bearer wrong-token-0123456789"} {
+			code, body := callAs(t, authorization, http.MethodPost, base+"/info", threatJSON(md5, "x"))
+			wantStatus(t, code, http.StatusUnauthorized, body)
+			wantMessage(t, body)
+		}
+
+		if code, _ := call(t, http.MethodGet, base+"/info/"+md5, ""); code != http.StatusNotFound {
+			t.Errorf("GET = %d, want %d: an unauthorized request must store nothing", code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("rejects fields the contract does not define", func(t *testing.T) {
+		md5 := hashN(7)
+		body := `{"md5":"` + md5 + `","name":"x","severity":"low","category":"worm","extra":1}`
+
+		code, got := call(t, http.MethodPost, base+"/info", body)
+		wantStatus(t, code, http.StatusBadRequest, got)
+		wantMessage(t, got)
+
+		if code, _ = call(t, http.MethodGet, base+"/info/"+md5, ""); code != http.StatusNotFound {
+			t.Errorf("GET = %d, want %d: nothing must be stored", code, http.StatusNotFound)
 		}
 	})
 
@@ -151,6 +179,11 @@ func TestGetThreat(t *testing.T) {
 		if got["md5"] != hashN(1) {
 			t.Errorf("md5 = %v, want %v", got["md5"], hashN(1))
 		}
+	})
+
+	t.Run("needs no token", func(t *testing.T) {
+		code, got := callAs(t, "", http.MethodGet, base+"/info/"+hashN(1), "")
+		wantStatus(t, code, http.StatusOK, got)
 	})
 
 	t.Run("answers 404 for an unknown hash", func(t *testing.T) {
@@ -208,6 +241,30 @@ func TestUpdateThreat(t *testing.T) {
 		if code, got := call(t, http.MethodGet, base+"/info/"+md5, ""); code != http.StatusOK || !reflect.DeepEqual(got, replaced) {
 			t.Errorf("GET = %d %v, want %v", code, got, replaced)
 		}
+	})
+
+	t.Run("requires a valid token and keeps the record without it", func(t *testing.T) {
+		md5 := hashN(4)
+		createThreat(t, base, md5, "Original")
+
+		for _, authorization := range []string{"", "Bearer wrong-token-0123456789"} {
+			code, got := callAs(t, authorization, http.MethodPut, base+"/info/"+md5, putJSON("Hijacked"))
+			wantStatus(t, code, http.StatusUnauthorized, got)
+			wantMessage(t, got)
+		}
+
+		if _, got := call(t, http.MethodGet, base+"/info/"+md5, ""); got["name"] != "Original" {
+			t.Errorf("name = %v, want the record untouched", got["name"])
+		}
+	})
+
+	t.Run("rejects fields the contract does not define", func(t *testing.T) {
+		md5 := hashN(5)
+		createThreat(t, base, md5, "Original")
+
+		code, got := call(t, http.MethodPut, base+"/info/"+md5, `{"name":"x","severity":"low","category":"worm","md5":"`+hashN(9)+`"}`)
+		wantStatus(t, code, http.StatusBadRequest, got)
+		wantMessage(t, got)
 	})
 
 	t.Run("answers 404 for an unknown hash", func(t *testing.T) {

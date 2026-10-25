@@ -88,8 +88,11 @@ func startService(t *testing.T, dsn string) *service {
 	}
 
 	getenv := func(key string) string {
-		if key == config.EnvDatabaseDSN {
+		switch key {
+		case config.EnvDatabaseDSN:
 			return dsn
+		case config.EnvAPIToken:
+			return apiToken
 		}
 
 		return ""

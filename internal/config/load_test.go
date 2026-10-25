@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const testDSN = "postgres://user:pass@localhost:5432/threats"
+const (
+	testDSN   = "postgres://user:pass@localhost:5432/threats"
+	testToken = "local-test-token-12345"
+)
 
 // validYAML is a complete, valid document: the loader has no defaults, so
 // every section must be present.
@@ -44,6 +47,10 @@ database:
     transaction: 10s
 `
 
+func secrets() map[string]string {
+	return map[string]string{EnvDatabaseDSN: testDSN, EnvAPIToken: testToken}
+}
+
 func env(vars map[string]string) func(string) string {
 	return func(key string) string { return vars[key] }
 }
@@ -60,7 +67,7 @@ func writeConfig(t *testing.T, contents string) string {
 }
 
 func TestLoadValidDocument(t *testing.T) {
-	cfg, err := Load(writeConfig(t, validYAML), env(map[string]string{EnvDatabaseDSN: testDSN}))
+	cfg, err := Load(writeConfig(t, validYAML), env(secrets()))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -95,7 +102,7 @@ func TestLoadValidDocument(t *testing.T) {
 }
 
 func TestLoadTakesDSNFromEnvironment(t *testing.T) {
-	cfg, err := Load(writeConfig(t, validYAML), env(map[string]string{EnvDatabaseDSN: testDSN}))
+	cfg, err := Load(writeConfig(t, validYAML), env(secrets()))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -119,7 +126,7 @@ func TestLoadRequiresDSN(t *testing.T) {
 func TestLoadRejectsDSNInYAML(t *testing.T) {
 	doc := strings.Replace(validYAML, "database:\n", "database:\n  dsn: "+testDSN+"\n", 1)
 
-	_, err := Load(writeConfig(t, doc), env(map[string]string{EnvDatabaseDSN: testDSN}))
+	_, err := Load(writeConfig(t, doc), env(secrets()))
 	if err == nil {
 		t.Fatal("Load accepted a dsn key in YAML, want an error: secrets belong in the environment")
 	}
@@ -141,7 +148,7 @@ func TestLoadRejectsBadDocuments(t *testing.T) {
 
 	for name, doc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := Load(writeConfig(t, doc), env(map[string]string{EnvDatabaseDSN: testDSN}))
+			_, err := Load(writeConfig(t, doc), env(secrets()))
 			if err == nil {
 				t.Fatal("Load succeeded, want an error")
 			}
@@ -152,7 +159,7 @@ func TestLoadRejectsBadDocuments(t *testing.T) {
 func TestLoadMissingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.yaml")
 
-	_, err := Load(path, env(map[string]string{EnvDatabaseDSN: testDSN}))
+	_, err := Load(path, env(secrets()))
 	if err == nil {
 		t.Fatal("Load succeeded for a missing file, want an error")
 	}
@@ -200,7 +207,28 @@ func TestResolvePath(t *testing.T) {
 func TestShippedConfigIsValid(t *testing.T) {
 	path := filepath.Join("..", "..", DefaultConfigPath)
 
-	if _, err := Load(path, env(map[string]string{EnvDatabaseDSN: testDSN})); err != nil {
+	if _, err := Load(path, env(secrets())); err != nil {
 		t.Fatalf("Load(%s): %v", path, err)
+	}
+}
+
+func TestLoadTakesTheTokenFromTheEnvironment(t *testing.T) {
+	cfg, err := Load(writeConfig(t, validYAML), env(secrets()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.APIToken != testToken {
+		t.Errorf("APIToken = %q, want the value of %s", cfg.APIToken, EnvAPIToken)
+	}
+}
+
+func TestLoadRequiresTheToken(t *testing.T) {
+	vars := secrets()
+	delete(vars, EnvAPIToken)
+
+	_, err := Load(writeConfig(t, validYAML), env(vars))
+	if err == nil || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("Load error = %v, want an error about the missing token", err)
 	}
 }

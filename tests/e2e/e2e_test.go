@@ -29,26 +29,50 @@ func baseURL(t *testing.T) string {
 	return base
 }
 
+func token() string {
+	if token := os.Getenv("E2E_API_TOKEN"); token != "" {
+		return token
+	}
+
+	return "local-dev-token-1234"
+}
+
 func call(t *testing.T, method, url, body string) (int, map[string]any) {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
+	return callAs(t, "Bearer "+token(), method, url, body)
+}
+
+func callAs(t *testing.T, authorization, method, url, body string) (int, map[string]any) {
+	t.Helper()
+
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, url, err)
+		}
+
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == 3 {
+			return resp.StatusCode, out
+		}
+
+		time.Sleep(time.Second)
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var out map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-
-	return resp.StatusCode, out
 }
 
 func newHash(t *testing.T) string {
@@ -184,4 +208,36 @@ func TestInvalidInputIsRejectedAndNotStored(t *testing.T) {
 
 	code, body = call(t, http.MethodGet, base+"/info/not-a-hash", "")
 	want(t, code, http.StatusBadRequest, body)
+
+	unknown := `{"md5":"` + md5 + `","name":"x","severity":"low","category":"worm","extra":1}`
+
+	code, body = call(t, http.MethodPost, base+"/info", unknown)
+	want(t, code, http.StatusBadRequest, body)
+
+	code, body = call(t, http.MethodGet, base+"/info/"+md5, "")
+	want(t, code, http.StatusNotFound, body)
+}
+
+func TestWritesRequireAToken(t *testing.T) {
+	base := baseURL(t)
+	md5 := newHash(t)
+
+	body := `{"md5":"` + md5 + `","name":"x","severity":"low","category":"worm"}`
+
+	for _, authorization := range []string{"", "Bearer wrong-token-0123456789"} {
+		code, got := callAs(t, authorization, http.MethodPost, base+"/info", body)
+		want(t, code, http.StatusUnauthorized, got)
+	}
+
+	code, got := call(t, http.MethodGet, base+"/info/"+md5, "")
+	want(t, code, http.StatusNotFound, got)
+
+	code, got = post(t, base, md5, "Authorized")
+	want(t, code, http.StatusCreated, got)
+
+	code, got = callAs(t, "", http.MethodGet, base+"/info/"+md5, "")
+	want(t, code, http.StatusOK, got)
+
+	code, got = callAs(t, "", http.MethodPut, base+"/info/"+md5, `{"name":"x","severity":"low","category":"worm"}`)
+	want(t, code, http.StatusUnauthorized, got)
 }

@@ -51,6 +51,7 @@ type Log struct {
 
 type Config struct {
 	Log        Log        `yaml:"log"`
+	APIToken   string     `yaml:"-"`
 	HTTPServer HTTPServer `yaml:"httpserver"`
 	Database   Database   `yaml:"database"`
 }

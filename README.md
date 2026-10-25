@@ -22,7 +22,7 @@ cd threat-info-service
 make up
 ```
 
-The command creates `.env` from [`.env.example`](.env.example) on the first run, starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. The example file holds ready-to-use test credentials for the local database, so nothing has to be configured. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
+The command creates `.env` from [`.env.example`](.env.example) on the first run, starts PostgreSQL 18 on port `5432`, applies the database migrations, then builds the image and starts the service on port `8080`. The example file holds ready-to-use test values for the local database and for the API token, so nothing has to be configured. Goose is not required: the Makefile runs a pinned version through Go. Run `make help` to see every command.
 
 ### Run from source
 
@@ -50,3 +50,14 @@ curl -i http://localhost:8080/readyz
 ```
 
 `/healthz` answers `200 OK` while the process is alive. `/readyz` answers `200 OK` when the database responds and `503 Service Unavailable` otherwise.
+
+Reads are open. `POST` and `PUT` require a bearer token from `THREAT_INFO_API_TOKEN` (`local-dev-token-1234` in the example file):
+
+```bash
+curl -i -X POST http://localhost:8080/info \
+  -H 'Authorization: Bearer local-dev-token-1234' \
+  -H 'Content-Type: application/json' \
+  -d '{"md5":"d41d8cd98f00b204e9800998ecf8427e","name":"Trojan.Win32.Generic","severity":"high","category":"trojan"}'
+
+curl -i http://localhost:8080/info/d41d8cd98f00b204e9800998ecf8427e
+```

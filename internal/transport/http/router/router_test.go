@@ -13,6 +13,13 @@ import (
 	"github.com/HAL-X9/threat-info-service/internal/transport/http/middleware"
 )
 
+const (
+	hash       = "d41d8cd98f00b204e9800998ecf8427e"
+	token      = "local-test-token-12345"
+	validBody  = `{"md5":"` + hash + `","name":"x","severity":"low","category":"worm"}`
+	authHeader = "Bearer " + token
+)
+
 type okDB struct{}
 
 func (okDB) Ping(context.Context) error { return nil }
@@ -31,75 +38,29 @@ func (emptyService) Update(context.Context, domain.MD5, domain.Details) (domain.
 	return domain.Threat{}, domain.ErrNotFound
 }
 
-func newRouter(logs *bytes.Buffer, limits Limits) http.Handler {
-	return New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{}, limits)
+var roomy = Options{RequestsPerSecond: 1000, Burst: 1000, MaxBodyBytes: 1 << 16, APIToken: token}
+
+func newRouter(t *testing.T, logs *bytes.Buffer, opts Options) http.Handler {
+	t.Helper()
+
+	handler, err := New(slog.New(slog.NewJSONHandler(logs, nil)), okDB{}, emptyService{}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return handler
 }
 
-var roomy = Limits{RequestsPerSecond: 1000, Burst: 1000, MaxBodyBytes: 1 << 16}
-
-func TestRoutes(t *testing.T) {
-	handler := newRouter(new(bytes.Buffer), roomy)
-
-	tests := map[string]struct {
-		method string
-		path   string
-		body   string
-		want   int
-	}{
-		"healthz":             {http.MethodGet, "/healthz", "", http.StatusOK},
-		"healthz head":        {http.MethodHead, "/healthz", "", http.StatusOK},
-		"healthz method":      {http.MethodPost, "/healthz", "", http.StatusMethodNotAllowed},
-		"readyz":              {http.MethodGet, "/readyz", "", http.StatusOK},
-		"readyz method":       {http.MethodPost, "/readyz", "", http.StatusMethodNotAllowed},
-		"get unknown threat":  {http.MethodGet, "/info/d41d8cd98f00b204e9800998ecf8427e", "", http.StatusNotFound},
-		"get invalid md5":     {http.MethodGet, "/info/abc", "", http.StatusBadRequest},
-		"create invalid body": {http.MethodPost, "/info", "{}", http.StatusBadRequest},
-		"unsupported method":  {http.MethodDelete, "/info/d41d8cd98f00b204e9800998ecf8427e", "", http.StatusMethodNotAllowed},
-		"unknown path":        {http.MethodGet, "/nope", "", http.StatusNotFound},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-
-			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-
-			handler.ServeHTTP(rec, req)
-
-			if rec.Code != tc.want {
-				t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
-			}
-		})
-	}
-}
-
-func TestOnlyAPIRequestsAreLogged(t *testing.T) {
-	var logs bytes.Buffer
-
-	handler := newRouter(&logs, roomy)
-
-	for _, path := range []string{"/healthz", "/readyz"} {
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
-	}
-
-	if logs.Len() != 0 {
-		t.Fatalf("probes were logged: %s", logs.String())
-	}
-
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/info/abc", nil))
-
-	if !strings.Contains(logs.String(), `"path":"/info/abc"`) {
-		t.Errorf("the API request was not logged: %q", logs.String())
-	}
-}
-
-func serve(handler http.Handler, method, path, contentType, body string) *httptest.ResponseRecorder {
+func serve(handler http.Handler, method, path, contentType, authorization, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "192.0.2.1:1000"
 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
 	}
 
 	rec := httptest.NewRecorder()
@@ -108,10 +69,95 @@ func serve(handler http.Handler, method, path, contentType, body string) *httpte
 	return rec
 }
 
+func TestRoutes(t *testing.T) {
+	handler := newRouter(t, new(bytes.Buffer), roomy)
+
+	tests := map[string]struct {
+		method string
+		path   string
+		body   string
+		want   int
+	}{
+		"healthz":            {http.MethodGet, "/healthz", "", http.StatusOK},
+		"healthz head":       {http.MethodHead, "/healthz", "", http.StatusOK},
+		"healthz method":     {http.MethodPost, "/healthz", "", http.StatusMethodNotAllowed},
+		"readyz":             {http.MethodGet, "/readyz", "", http.StatusOK},
+		"readyz method":      {http.MethodPost, "/readyz", "", http.StatusMethodNotAllowed},
+		"get unknown":        {http.MethodGet, "/info/" + hash, "", http.StatusNotFound},
+		"get invalid hash":   {http.MethodGet, "/info/abc", "", http.StatusBadRequest},
+		"create":             {http.MethodPost, "/info", validBody, http.StatusNotFound},
+		"create invalid":     {http.MethodPost, "/info", "{}", http.StatusBadRequest},
+		"unsupported method": {http.MethodDelete, "/info/" + hash, "", http.StatusMethodNotAllowed},
+		"unknown path":       {http.MethodGet, "/nope", "", http.StatusNotFound},
+		"unknown api path":   {http.MethodGet, "/info/" + hash + "/extra", "", http.StatusNotFound},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			rec := serve(handler, tc.method, tc.path, "application/json", authHeader, tc.body)
+
+			if rec.Code != tc.want {
+				t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+			}
+		})
+	}
+}
+
+func TestWritesRequireAToken(t *testing.T) {
+	handler := newRouter(t, new(bytes.Buffer), roomy)
+
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		path := "/info"
+		if method == http.MethodPut {
+			path = "/info/" + hash
+		}
+
+		body := validBody
+		if method == http.MethodPut {
+			body = `{"name":"x","severity":"low","category":"worm"}`
+		}
+
+		rec := serve(handler, method, path, "application/json", "", body)
+		if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != "Bearer" {
+			t.Errorf("%s without a token = %d, want 401 with WWW-Authenticate", method, rec.Code)
+		}
+
+		if rec = serve(handler, method, path, "application/json", authHeader, body); rec.Code != http.StatusNotFound {
+			t.Errorf("%s with a token = %d, want %d: the request must reach the handler", method, rec.Code, http.StatusNotFound)
+		}
+	}
+
+	if rec := serve(handler, http.MethodGet, "/info/"+hash, "", "", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("GET without a token = %d, want %d: reads are open", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestOnlyAPIRequestsAreLogged(t *testing.T) {
+	var logs bytes.Buffer
+
+	handler := newRouter(t, &logs, roomy)
+
+	for _, path := range []string{"/healthz", "/readyz"} {
+		serve(handler, http.MethodGet, path, "", "", "")
+	}
+
+	if logs.Len() != 0 {
+		t.Fatalf("probes were logged: %s", logs.String())
+	}
+
+	serve(handler, http.MethodGet, "/info/abc", "", "", "")
+
+	if !strings.Contains(logs.String(), `"path":"/info/abc"`) {
+		t.Errorf("the API request was not logged: %q", logs.String())
+	}
+}
+
 func TestAPIRequestsPassThroughTheChain(t *testing.T) {
 	var logs bytes.Buffer
 
-	handler := newRouter(&logs, Limits{RequestsPerSecond: 1000, Burst: 1000, MaxBodyBytes: 10})
+	opts := roomy
+	opts.MaxBodyBytes = 10
+	handler := newRouter(t, &logs, opts)
 
 	tests := map[string]struct {
 		method      string
@@ -132,7 +178,7 @@ func TestAPIRequestsPassThroughTheChain(t *testing.T) {
 				path = "/info/abc"
 			}
 
-			rec := serve(handler, tc.method, path, tc.contentType, tc.body)
+			rec := serve(handler, tc.method, path, tc.contentType, authHeader, tc.body)
 
 			if rec.Code != tc.want {
 				t.Errorf("status = %d, want %d", rec.Code, tc.want)
@@ -144,15 +190,15 @@ func TestAPIRequestsPassThroughTheChain(t *testing.T) {
 		})
 	}
 
-	if got := strings.Count(logs.String(), `"request_id":""`); got != 0 {
-		t.Errorf("%d log lines have an empty request_id: %s", got, logs.String())
+	if strings.Contains(logs.String(), `"request_id":""`) {
+		t.Errorf("a log line has an empty request_id: %s", logs.String())
 	}
 }
 
 func TestAPIRequestIDFromTheClientIsEchoedAndLogged(t *testing.T) {
 	var logs bytes.Buffer
 
-	handler := newRouter(&logs, roomy)
+	handler := newRouter(t, &logs, roomy)
 
 	req := httptest.NewRequest(http.MethodGet, "/info/abc", nil)
 	req.Header.Set(middleware.RequestIDHeader, "client-42")
@@ -170,19 +216,21 @@ func TestAPIRequestIDFromTheClientIsEchoedAndLogged(t *testing.T) {
 }
 
 func TestRateLimitAppliesToTheAPIOnly(t *testing.T) {
-	handler := newRouter(new(bytes.Buffer), Limits{RequestsPerSecond: 1, Burst: 1, MaxBodyBytes: 1 << 16})
+	opts := roomy
+	opts.RequestsPerSecond, opts.Burst = 1, 1
+	handler := newRouter(t, new(bytes.Buffer), opts)
 
-	if got := serve(handler, http.MethodGet, "/info/abc", "", "").Code; got != http.StatusBadRequest {
+	if got := serve(handler, http.MethodGet, "/info/abc", "", "", "").Code; got != http.StatusBadRequest {
 		t.Fatalf("first API request = %d, want %d", got, http.StatusBadRequest)
 	}
 
-	rejected := serve(handler, http.MethodGet, "/info/abc", "", "")
+	rejected := serve(handler, http.MethodGet, "/info/abc", "", "", "")
 	if rejected.Code != http.StatusTooManyRequests || rejected.Header().Get(middleware.RequestIDHeader) == "" {
 		t.Errorf("second API request = %d, want %d with a request id", rejected.Code, http.StatusTooManyRequests)
 	}
 
 	for range 5 {
-		probe := serve(handler, http.MethodGet, "/healthz", "", "")
+		probe := serve(handler, http.MethodGet, "/healthz", "", "", "")
 		if probe.Code != http.StatusOK || probe.Header().Get(middleware.RequestIDHeader) != "" {
 			t.Fatalf("/healthz = %d with request id %q, want an unlimited probe outside the chain", probe.Code, probe.Header().Get(middleware.RequestIDHeader))
 		}

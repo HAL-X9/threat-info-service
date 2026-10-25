@@ -10,6 +10,7 @@ import (
 // breaks exactly one thing in it.
 func validConfig() *Config {
 	return &Config{
+		APIToken: testToken,
 		HTTPServer: HTTPServer{
 			Addr: ":8080",
 			Timeouts: HTTPTimeouts{
@@ -89,6 +90,10 @@ func TestValidateRejectsInvalidConfig(t *testing.T) {
 		"negative max_header_bytes": {
 			mutate:  func(c *Config) { c.HTTPServer.MaxHeaderBytes = -1 },
 			wantErr: "max_header_bytes",
+		},
+		"no api token": {
+			mutate:  func(c *Config) { c.APIToken = "" },
+			wantErr: "token",
 		},
 		"zero max_body_bytes": {
 			mutate:  func(c *Config) { c.HTTPServer.MaxBodyBytes = 0 },

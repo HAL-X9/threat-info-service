@@ -19,6 +19,10 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("validate database: %w", err)
 	}
 
+	if cfg.APIToken == "" {
+		return fmt.Errorf("validate config: api token cannot be empty")
+	}
+
 	return nil
 }
 

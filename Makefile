@@ -4,7 +4,7 @@ BIN_DIR := bin
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.29.0
 
 -include .env
-export POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+export POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB THREAT_INFO_API_TOKEN
 
 THREAT_INFO_DATABASE_DSN ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable
 export THREAT_INFO_DATABASE_DSN
@@ -69,7 +69,7 @@ test-integration: ## Run the integration tests (needs Docker)
 
 .PHONY: test-e2e
 test-e2e: ## Run the end-to-end tests against the running stack (make up first)
-	go test -count=1 -tags e2e ./tests/e2e/...
+	E2E_API_TOKEN="$$THREAT_INFO_API_TOKEN" go test -count=1 -tags e2e ./tests/e2e/...
 
 .PHONY: lint
 lint: ## Run golangci-lint
